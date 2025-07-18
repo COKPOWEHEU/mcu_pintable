@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include "pack_KiCad.h"
 
 char *configfile = "config.cfg";
 
@@ -24,6 +25,9 @@ char* make_out_name(char *iname){
   return res;
 }
 
+typedef void (*dirfiles_func_t)(char *filename, void *data);
+void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void *userdata);
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////// Parse input file ///////////////////////////////////////////////////////////////////////////////
@@ -37,6 +41,11 @@ typedef struct{
   int extrapins; //сколько пинов вне группы
 }package_t;
 package_t *packages = NULL;
+size_t packagenum = 0;
+size_t packagealloc = 0;
+const size_t packagealloc_dn = 10;
+
+pack_t *pack = NULL;
 size_t packnum = 0;
 size_t packalloc = 0;
 const size_t packalloc_dn = 10;
@@ -81,55 +90,55 @@ void packages_parse(char *buf){
   int res;
   while(str != NULL){
     //realloc 'packages' buffer if needed
-    if(packnum+1 >= packalloc){
+    if(packagenum+1 >= packagealloc){
       package_t *prev = packages;
-      packages = realloc(packages, sizeof(package_t)*(packalloc+packalloc_dn));
+      packages = realloc(packages, sizeof(package_t)*(packagealloc+packagealloc_dn));
       if(packages == NULL){
         fprintf(stderr, "Not enough memory\n");
         fatalflag = 1;
         free(prev);
         return;
       }
-      packalloc += packalloc_dn;
+      packagealloc += packagealloc_dn;
     }
     //read next package
-    res = sscanf(str, "%100[^[][%ix%i+%i]", packages[packnum].name, &(packages[packnum].grouppins), &(packages[packnum].npins), &(packages[packnum].extrapins));
+    res = sscanf(str, "%100[^[][%ix%i+%i]", packages[packagenum].name, &(packages[packagenum].grouppins), &(packages[packagenum].npins), &(packages[packagenum].extrapins));
     if(res < 2){
       fprintf(stderr, "%i: [%s] wrong package format\n", linenum, str);
       fatalflag = 1; return;
     }else if(res == 2){
-      packages[packnum].npins = 1; packages[packnum].extrapins = 0;
+      packages[packagenum].npins = 1; packages[packagenum].extrapins = 0;
     }else if(res == 3){
-      packages[packnum].extrapins = 0;
+      packages[packagenum].extrapins = 0;
     }else{
       //do nothing
     }
-    packages[packnum].name[sizeof(packages[0].name)-1] = 0;
-    packages[packnum].npins *= packages[packnum].grouppins;
-    packages[packnum].npins += packages[packnum].extrapins;
-    packages[packnum].npins += 1;
+    packages[packagenum].name[sizeof(packages[0].name)-1] = 0;
+    packages[packagenum].npins *= packages[packagenum].grouppins;
+    packages[packagenum].npins += packages[packagenum].extrapins;
+    packages[packagenum].npins += 1;
     
-    packnum++;
+    packagenum++;
     
     str = strtok(NULL, delim);
   }
 }
 void package_show(){
   if(packages == NULL)return;
-  for(int i=0; i<packnum; i++){
+  for(int i=0; i<packagenum; i++){
     printf("[%s] %i | %i (+%i)\n", packages[i].name, packages[i].npins, packages[i].grouppins, packages[i].extrapins);
   }
 }
 int pack_search(char *name){
   if(packages == NULL)return -1;
-  for(int i=0; i<packnum; i++){
+  for(int i=0; i<packagenum; i++){
     if(strcmp(name, packages[i].name)==0)return i;
   }
   return -1;
 }
 void package_free(){
   if(packages)free(packages);
-  packages = NULL; packnum = 0; packalloc = 0;
+  packages = NULL; packagenum = 0; packagealloc = 0;
 }
 
 void mcu_parse(char *buf){
@@ -263,7 +272,7 @@ void periph_free(){
 
 void test_deps(){
   if(packages == NULL){fprintf(stderr, "'Packages' section not found\n"); fatalflag = 1; return;}
-  for(int i=0; i<packnum; i++){
+  for(int i=0; i<packagenum; i++){
     if(packages[i].npins == 0){
       fprintf(stderr, "Wrong pin number in [%s]\n", packages[i].name);
       fatalflag = 1;
@@ -509,6 +518,44 @@ char* match_periph(char *funcs, periph_t *per){
   return buf;
 }
 
+void pack_import(char *filename, void *data){
+  //printf("[%s]\n", filename);
+  pack_t *p = pack_load(filename);
+  if(p == NULL)return;
+  if(packnum+1 >= packalloc){
+    printf("realloc %i\n", packalloc + packalloc_dn);
+    pack_t *prev = pack;
+    pack = realloc(pack, sizeof(pack_t)*(packalloc + packalloc_dn));
+    if(pack == NULL){
+      fprintf(stderr, "Not enough memory\n");
+      fatalflag = 1;
+      for(int i=0; i<packnum; i++)pack_free(&prev[i]);
+      free(prev);
+      return;
+    }
+    packalloc += packalloc_dn;
+  }
+  memcpy(&(pack[packnum]), p, sizeof(pack_t));
+  packnum++;
+  free(p);
+}
+void packs_import(char *dirname){
+  dirfiles_read(dirname, ".kicad_mod", pack_import, NULL);
+}
+void packs_show(){
+  if(pack == NULL)return;
+  for(int i=0; i<packnum; i++){
+    printf("%i: [%s](%i)\n", i, pack[i].name, pack[i].pinn);
+    //pack_test(&pack[i]);
+  }
+}
+void packs_free(){
+  if(pack == NULL)return;
+  for(int i=0; i<packnum; i++){pack_free(&(pack[i]));}
+  free(pack);
+  pack = NULL; packnum = 0; packalloc = 0;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////// HTML export ////////////////////////////////////////////////////////////////////////////////////
@@ -711,11 +758,103 @@ void html_write(FILE *pf){
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////// filesystem  ////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#if defined(linux) || defined(__linux) || defined(__linux__) || defined(__GNU__) || defined(__GLIBC__)\
+    || defined(__APPLE__) || defined(__MACH__)
+    
+#include <dirent.h>
+void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void *userdata){
+  DIR *dir;
+  struct dirent *entry;
+  size_t rootlen = strlen(dirname);
+  size_t extlen = strlen(extname);
+  size_t leaflen;
+  
+  dir = opendir(dirname);
+  if(!dir){
+    leaflen = strlen(dirname);
+    if((leaflen > extlen)&&(strcasecmp(&(dirname[leaflen-extlen]), extname) == 0)){
+      callback(dirname, userdata);
+      return;
+    }else{
+      fprintf(stderr, "Unable to open [%s]\n", dirname);
+      return;
+    }
+  }
+  
+  while( (entry = readdir(dir)) != NULL){
+    char *name = entry->d_name;
+    if(name[0] == '.')continue;
+    unsigned char type = entry->d_type;
+    leaflen = strlen(name);
+    char *newname = malloc(rootlen + leaflen + 2);
+    memcpy(newname, dirname, rootlen);
+    newname[rootlen] = '/';
+    memcpy(&newname[rootlen+1], name, leaflen);
+    newname[rootlen + 1 + leaflen] = 0;
+    dirfiles_read(newname, extname, callback, userdata);
+    free(newname);
+  };
+  closedir(dir);
+}
+
+#elif defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+
+#include <windows.h>
+void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void *userdata){
+  size_t rootlen = strlen(dirname);
+  size_t extlen = strlen(extname);
+  char *path = malloc(rootlen + 5);
+  memcpy(path, dirname, rootlen);
+  path[rootlen] = '/';
+  path[rootlen+1] = '*';
+  path[rootlen+2] = 0;
+  WIN32_FIND_DATA ffd;
+  HANDLE hFind = FindFirstFile(path, &ffd);
+  do{
+    if(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY){
+      if(ffd.cFileName[0] == '.')continue;
+      size_t leaflen = strlen(ffd.cFileName);
+      char *newname = malloc(rootlen + leaflen + 5);
+      memcpy(newname, dirname, rootlen);
+      newname[rootlen] = '/';
+      memcpy(&newname[rootlen+1], ffd.cFileName, leaflen);
+      newname[rootlen + 1 + leaflen] = 0;
+      dirfiles_read(newname, extname, callback, userdata);
+      free(newname);
+    }else{
+      size_t leaflen = strlen(ffd.cFileName);
+      if(leaflen < extlen)continue;
+      if(strcasecmp(&(ffd.cFileName[leaflen-extlen]), extname) != 0)continue;
+      char *newname = malloc(rootlen + leaflen + 2);
+      memcpy(newname, dirname, rootlen);
+      newname[rootlen] = '/';
+      memcpy(&newname[rootlen+1], ffd.cFileName, leaflen);
+      newname[rootlen + 1 + leaflen] = 0;
+      callback(newname, userdata);
+      free(newname);
+    }
+  }while(FindNextFile(hFind, &ffd) != 0);
+
+  FindClose(hFind);
+  free(path);        
+}
+
+#else
+  #error "Unsupported platform"
+#endif
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////// main ////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "pack_KiCad.h"
+
 void test(pack_t *p){
   FILE *pf = fopen("gr.html", "w");
   float size = 500;
@@ -797,14 +936,15 @@ void test(pack_t *p){
   fclose(pf);
 }
 
-int main(int argc, char **argv){
+int main1(int argc, char **argv){
+#if 1
   if(argc < 2){printf("select file name\n"); return 0;}
   pack_t *p;
   p = pack_load(argv[1]);
   test(p);
-  //pack_test(p);
+  pack_test(p);
   pack_free(p);
-#if 0
+#elif 0
   p = pack_load("packages_KiCad/LQFP-32_7x7mm_P0.8mm.kicad_mod");
   pack_test(p);
   test(p);
@@ -812,8 +952,17 @@ int main(int argc, char **argv){
 #endif
 }
 
+void files_test(char *name, void *data){
+  printf("[%s]\n", name);
+}
+int main2(int argc, char **argv){
+  //dirfiles_read("packages_KiCad", ".kicad_mod", files_test, NULL);
+  //dirfiles_read("footprints", ".kicad_mod", files_test, NULL);
+  dirfiles_read(argv[1], ".kicad_mod", files_test, NULL);
+}
+
 #define StrEq(str, templ) (strncmp(str, templ, sizeof(templ)-1)==0)
-int main1(int argc, char **argv){
+int main(int argc, char **argv){
   char *inputfile = NULL;
   char *outputfile = NULL;
   char alloc_out = 0;
@@ -822,7 +971,7 @@ int main1(int argc, char **argv){
     if(StrEq(argv[i], "--config=")){
       configfile = argv[i] + sizeof("--config=") - 1;
     }else if(StrEq(argv[i], "--packages=")){
-      //TODO
+      packs_import(argv[i] + sizeof("--packages=") - 1);
     }else{
       if(inputfile == NULL){
         inputfile = argv[i];
@@ -831,6 +980,7 @@ int main1(int argc, char **argv){
       }
     }
   }
+  packs_show();
   if(inputfile == NULL){
     help(argv[0]); return 0;
   }
@@ -879,7 +1029,7 @@ destroy_all:
   periph_free();
   mcu_free();
   package_free();
-  
+  packs_free();
   
   if(alloc_out){free(outputfile);}
 }

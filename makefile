@@ -46,7 +46,7 @@ spec_cflags +=	$(_flagdiv_)arch_lin64 `xml2-config --cflags`
 spec_cflags +=	$(_flagdiv_)arch_win32
 		
 spec_ldflags +=	$(_flagdiv_)arch_lin64 `xml2-config --libs`
-spec_ldflags +=	$(_flagdiv_)arch_win32 -static-libgcc -static-libstdc++ -lmingw32 -lSDL2main -lopengl32 -lglu32 -lgdi32 -mconsole -mwindows -lmingw32 -lSDL2main -lSDL2 -mwindows -lSDL2.dll
+spec_ldflags +=	$(_flagdiv_)arch_win32 -static-libgcc -static-libstdc++ -mconsole -mwindows -lmingw32
 
 res_flags =	$(_flagdiv_)mode_debug -gdwarf-2 -DTODO_WARN
 
