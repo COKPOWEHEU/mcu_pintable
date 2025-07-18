@@ -740,14 +740,15 @@ void test(pack_t *p){
               "  const canvas = document.getElementById(\"canvas\");\n"
               "  if( !canvas.getContext )return;\n"
               "  const ctx = canvas.getContext(\"2d\");\n"
-              "  let tbl = document.getElementsByName(\"Table_test\");\n"
-              "  draw_mcu(ctx, tbl[0].children[1].children); \n"
+              "  let tbl = document.getElementsByName(\"Table_test\");\n");
+  fprintf(pf, "  let x=0, y=0, scale=%f\n", size);
+  fprintf(pf, "  draw_mcu(ctx, tbl[0].children[1].children, x, y, scale); \n"
               "}\n"
               "var table_selected = -1;\n"
               "\n"
-              "function draw_mcu(ctx, tbl){\n");
+              "function draw_mcu(ctx, tbl, x, y, scale){\n");
   
-  pack_html_export(p, pf, size);
+  pack_html_export(p, pf);
   
   fprintf(pf, "}\n"
               "window.addEventListener(\"load\", draw);\n"
@@ -768,7 +769,7 @@ void test(pack_t *p){
               "      <th>Name</th>\n"
               "      <th>UART</th>\n"
               "      <th>SPI</th>\n"
-              "      <th>Comm</th>\n"
+              "      <th class=\"tbl_pinname\">Comm</th>\n"
               "    </tr>\n  </thead>\n  <tbody>\n"
               "    <tr onmousemove=\"table_onmouse(0);\">\n"
               "      <td>1</td>\n"
@@ -801,9 +802,10 @@ int main(int argc, char **argv){
   pack_t *p;
   p = pack_load(argv[1]);
   test(p);
+  //pack_test(p);
   pack_free(p);
 #if 0
-  p= pack_load("packages_KiCad/LQFP-32_7x7mm_P0.8mm.kicad_mod");
+  p = pack_load("packages_KiCad/LQFP-32_7x7mm_P0.8mm.kicad_mod");
   pack_test(p);
   test(p);
   pack_free(p);

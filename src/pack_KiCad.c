@@ -264,7 +264,7 @@ pack_t* pack_load(char *filename){
   
   fclose(pf);
   
-  printf("Graph: %i\tpads: %i\n", p->graphn, p->pinn);
+  //printf("Graph: %i\tpads: %i\n", p->graphn, p->pinn);
   
   return p;
 }
@@ -296,13 +296,16 @@ void pack_test(pack_t *p){
   }
 }
 
-
-void pack_html_export(pack_t *p, FILE *pf, float size){
-  float S = size;
+// draw_mcu(ctx, tbl, x, y, scale)
+void pack_html_export(pack_t *p, FILE *pf){
+  if(p == NULL)return;
   fprintf(pf, "  const patternCanvas = document.createElement(\"canvas\");\n"
               "  const patternContext = patternCanvas.getContext(\"2d\");\n"
               "  patternCanvas.width = 10;\n"
               "  patternCanvas.height = 10;\n"
+              "  patternContext.fillStyle =\"rgb(200 200 200)\";\n"
+              "  patternContext.fillRect(0, 0, patternCanvas.width, patternCanvas.height);\n"
+              "  patternContext.fillStyle =\"rgb(0 0 0)\";\n"
               "  patternContext.fillRect(0, 0, 5, 5);\n"
               "  const pattern = ctx.createPattern(patternCanvas, \"repeat\");\n"
               "  ctx.fillStyle =\"rgb(200 200 200)\";\n"
@@ -312,10 +315,10 @@ void pack_html_export(pack_t *p, FILE *pf, float size){
   fprintf(pf, "  const pins = [\n");
   float sz = 1e20;
   for(int i=0; i<p->pinn; i++){
-    float w = p->pin[i].w*S;
-    float h = p->pin[i].h*S;
-    float x = p->pin[i].x*S;
-    float y = p->pin[i].y*S;
+    float w = p->pin[i].w;
+    float h = p->pin[i].h;
+    float x = p->pin[i].x;
+    float y = p->pin[i].y;
     if(p->pin[i].name[0]){
       if(w < sz)sz = w;
       if(h < sz)sz = h;
@@ -324,7 +327,7 @@ void pack_html_export(pack_t *p, FILE *pf, float size){
       x -= w/2; y-=h/2;
       fprintf(pf, "    ['r', %f, %f, %f, %f],//%i\n", x,y, w,h, i);
     }else if(p->pin[i].shape == pin_oval){
-      fprintf(pf, "    ['r', %f, %f, %f, %f],//%i\n", x,y, w/2,h/2, i);
+      fprintf(pf, "    ['c', %f, %f, %f, %f],//%i\n", x,y, w/2,h/2, i);
     }
   }
   fprintf(pf, "  ];\n"
@@ -341,10 +344,10 @@ void pack_html_export(pack_t *p, FILE *pf, float size){
               "      ctx.fillStyle = pattern;\n"
               "    }\n"
               "    if(pins[i][0] == 'r'){\n"
-              "      ctx.fillRect(pins[i][1], pins[i][2], pins[i][3], pins[i][4]);\n"
+              "      ctx.fillRect(x+pins[i][1]*scale, y+pins[i][2]*scale, pins[i][3]*scale, pins[i][4]*scale);\n"
               "    }else{\n"
               "      ctx.beginPath();\n"
-              "      ctx.ellipse(pins[i][1], pins[i][2], pins[i][3], pins[i][4], 0, 0, Math.PI*2);\n"
+              "      ctx.ellipse(x+pins[i][1]*scale, y+pins[i][2]*scale, pins[i][3]*scale, pins[i][4]*scale, 0, 0, Math.PI*2);\n"
               "      ctx.fill();\n"
               "    }\n"
               "    ctx.fillStyle = \"rgb(200 200 200)\";\n"
@@ -355,11 +358,11 @@ void pack_html_export(pack_t *p, FILE *pf, float size){
   fprintf(pf, "  ctx.fillStyle =\"rgb(0 0 0)\";\n"
               "  ctx.textBaseline = \"middle\";\n"
               "  ctx.textAlign = \"center\";\n");
-  fprintf(pf, "  ctx.font = \"%fpx serif\";\n", sz);
+  fprintf(pf, "  ctx.font = scale*%f + \"px serif\";\n", sz);
   fprintf(pf, "  const pin_names = [\n");
   for(int i=0; i<p->pinn; i++){
-    float x = p->pin[i].x*S;
-    float y = p->pin[i].y*S;
+    float x = p->pin[i].x;
+    float y = p->pin[i].y;
     char orient = 'h';
     if(p->pin[i].w*1.1 < p->pin[i].h)orient = 'v';
     
@@ -370,7 +373,7 @@ void pack_html_export(pack_t *p, FILE *pf, float size){
              "  let idx = -1;\n"
              "  let hdr = tbl[0].parentElement.parentElement.children[0].children[0].children;\n"
              "  for(let i=0; i<hdr.length; i++){\n"
-             "    if(hdr[i].textContent == \"Comm\"){idx = i; break;}\n"
+             "    if(hdr[i].className == \"tbl_pinname\"){idx = i; break;}\n"
              "  }\n"
              "  for(let i=0; i<pin_names.length; i++){\n"
              "    let name = pin_names[i][3];\n"
@@ -379,9 +382,9 @@ void pack_html_export(pack_t *p, FILE *pf, float size){
              "      if(val != \"\")name = val;\n"
              "    }\n"
              "    if(pin_names[i][0] == 'h'){\n"
-             "      ctx.strokeText(name, pin_names[i][1], pin_names[i][2]);\n"
+             "      ctx.strokeText(name, x + pin_names[i][1]*scale, y + pin_names[i][2]*scale);\n"
              "    }else{\n"
-             "      ctx.save(); ctx.translate(pin_names[i][1], pin_names[i][2]);\n"
+             "      ctx.save(); ctx.translate(x + pin_names[i][1]*scale, y + pin_names[i][2]*scale);\n"
              "      ctx.rotate(-Math.PI/2); ctx.strokeText(name, 0, 0);\n"
              "      ctx.restore();\n"
              "    }\n"
@@ -392,8 +395,8 @@ void pack_html_export(pack_t *p, FILE *pf, float size){
   fprintf(pf, "  ctx.beginPath();\n");
   for(int i=0; i<p->graphn; i++){
     if(p->graph[i].type == pg_line){
-      fprintf(pf, "  ctx.moveTo(%f, %f);", p->graph[i].line.x1*S, p->graph[i].line.y1*S);
-      fprintf(pf, " ctx.lineTo(%f, %f); //%i\n", p->graph[i].line.x2*S, p->graph[i].line.y2*S, i);
+      fprintf(pf, "  ctx.moveTo(x + %f*scale, x + %f*scale);", p->graph[i].line.x1, p->graph[i].line.y1);
+      fprintf(pf, " ctx.lineTo(x + %f*scale, y + %f*scale); //%i\n", p->graph[i].line.x2, p->graph[i].line.y2, i);
     }else if(p->graph[i].type == pg_arc){
       float x1=p->graph[i].arc.x1;
       float x2=p->graph[i].arc.x2;
@@ -419,9 +422,8 @@ void pack_html_export(pack_t *p, FILE *pf, float size){
       a1 = atan2f( y1-Y, x1-X );
       a2 = atan2f( y2-Y, x2-X );
       a3 = atan2f( y3-Y, x3-X );
-      X *=S; Y *=S; R *= S;
       char dir = 0;
-      fprintf(pf, "  ctx.arc(%f, %f, %f, %f, %f, %s); //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
+      fprintf(pf, "  ctx.arc(x+%f*scale, y+%f*scale, %f, %f, %f, %s); //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
     }
   }
   fprintf(pf, "  ctx.stroke();\n");

@@ -20,6 +20,6 @@ pack_t* pack_load(char *filename);
 void pack_free(pack_t *p);
 void pack_test(pack_t *p);
 void pack_graph_size(pack_t *p, float *x, float *y, float *w, float *h);
-void pack_html_export(pack_t *p, FILE *pf, float size);
+void pack_html_export(pack_t *p, FILE *pf);
 
 #endif
