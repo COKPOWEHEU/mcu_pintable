@@ -23,6 +23,43 @@ void pack_html_export(pack_t *p, FILE *pf);
 
 #endif
 #if 0
+
+pack_t *pack = NULL;
+char **pack_altname = NULL;
+size_t packnum = 0;
+size_t packalloc = 0;
+const size_t packalloc_dn = 10;
+
+typedef struct{
+  char name[20];
+  char num[10];
+  char *funcs;
+}periphlist_t;
+
+typedef struct{
+  char name[100];
+  char *packname;
+  pack_t *pack;
+  periphlist_t *per;
+}mcu_t;
+mcu_t *mcu = NULL;
+int mcun = 0;
+int mcualloc = 0;
+const int mcualloc_dn = 5;
+
+typedef struct{
+  char name[100];
+  size_t nlen;
+  char altname[20];
+  size_t alen;
+}periph_t;
+periph_t *periph = NULL;
+int periphn = 0;
+int periphalloc = 0;
+const int periphalloc_dn = 5;
+#endif
+
+#if 0
 typedef enum{
   pin_rect = 0,
   pin_oval,

@@ -309,7 +309,9 @@ void pack_test(pack_t *p){
   float x, y, w, h;
   const char *pinsh_name[] = {"rect", "oval", "???"};
   if(p == NULL)return;
-  printf("name = [%s]%i\t%i\n", p->name, p->pinn, pintr->graphn);
+  int pinn = 0;
+  for(int i=0; i<p->pinn; i++)if(p->pin[i].name[0] != 0)pinn++;
+  printf("name = [%s]%i (%i)\t%i\n", p->name, p->pinn, pinn, pintr->graphn);
   pack_graph_size(p, &x, &y, &w, &h);
   printf("[%f ; %f]\t(%f x %f)\n", x, y, w, h);
   for(int i=0; i<p->pinn; i++){

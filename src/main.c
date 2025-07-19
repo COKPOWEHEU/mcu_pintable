@@ -5,7 +5,8 @@
 #include <ctype.h>
 #include "pack_KiCad.h"
 
-char *configfile = "config.cfg";
+//char *configfile = "config.cfg";
+const char *pack_defaultpath[] = {"./"};
 
 int linenum = 0;
 char fatalflag = 0;
@@ -34,18 +35,9 @@ void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-typedef struct{
-  char name[100];
-  int npins; //сколько пинов всего
-  int grouppins; //сколько пинов в одной группе
-  int extrapins; //сколько пинов вне группы
-}package_t;
-package_t *packages = NULL;
-size_t packagenum = 0;
-size_t packagealloc = 0;
-const size_t packagealloc_dn = 10;
-
 pack_t *pack = NULL;
+char **pack_altname = NULL;
+#define altname(i) pack_altname[ ((size_t)mcu[i].pack - (size_t)pack) / sizeof(pack_t) ]
 size_t packnum = 0;
 size_t packalloc = 0;
 const size_t packalloc_dn = 10;
@@ -59,7 +51,7 @@ typedef struct{
 typedef struct{
   char name[100];
   char *packname;
-  package_t *pack;
+  pack_t *pack;
   periphlist_t *per;
 }mcu_t;
 mcu_t *mcu = NULL;
@@ -88,57 +80,43 @@ void packages_parse(char *buf){
   const char delim[] = "; \t\r\n";
   char *str = strtok(buf, delim);
   int res;
+  if(pack_altname == NULL){fprintf(stderr, "package list is empty\n"); return;}
   while(str != NULL){
-    //realloc 'packages' buffer if needed
-    if(packagenum+1 >= packagealloc){
-      package_t *prev = packages;
-      packages = realloc(packages, sizeof(package_t)*(packagealloc+packagealloc_dn));
-      if(packages == NULL){
-        fprintf(stderr, "Not enough memory\n");
-        fatalflag = 1;
-        free(prev);
-        return;
+    char name[100], altname[100];
+    res = sscanf(str, "%100[^[][%100[^]]]", altname, name);
+    if(res < 1){fprintf(stderr, "Wrong format at %i\n", linenum); fatalflag=1; return;}
+    int idx = -1;
+    for(int i=0; i<packnum; i++){
+      if(strcmp(altname, pack[i].name)==0){idx = i; break;}
+      if(res > 1)if(strcmp(name, pack[i].name)==0){idx = i; break;}
+    }
+    //printf("pack %i [%s|%s]\n", idx, name, altname);
+    if(idx >= 0){
+      if(pack_altname[idx])free(pack_altname[idx]);
+      if(res == 2){
+        pack_altname[idx] = strdup(altname);
+      }else{
+        pack_altname[idx] = strdup(name);
       }
-      packagealloc += packagealloc_dn;
     }
-    //read next package
-    res = sscanf(str, "%100[^[][%ix%i+%i]", packages[packagenum].name, &(packages[packagenum].grouppins), &(packages[packagenum].npins), &(packages[packagenum].extrapins));
-    if(res < 2){
-      fprintf(stderr, "%i: [%s] wrong package format\n", linenum, str);
-      fatalflag = 1; return;
-    }else if(res == 2){
-      packages[packagenum].npins = 1; packages[packagenum].extrapins = 0;
-    }else if(res == 3){
-      packages[packagenum].extrapins = 0;
-    }else{
-      //do nothing
-    }
-    packages[packagenum].name[sizeof(packages[0].name)-1] = 0;
-    packages[packagenum].npins *= packages[packagenum].grouppins;
-    packages[packagenum].npins += packages[packagenum].extrapins;
-    packages[packagenum].npins += 1;
-    
-    packagenum++;
     
     str = strtok(NULL, delim);
   }
 }
-void package_show(){
-  if(packages == NULL)return;
-  for(int i=0; i<packagenum; i++){
-    printf("[%s] %i | %i (+%i)\n", packages[i].name, packages[i].npins, packages[i].grouppins, packages[i].extrapins);
-  }
-}
 int pack_search(char *name){
-  if(packages == NULL)return -1;
-  for(int i=0; i<packagenum; i++){
-    if(strcmp(name, packages[i].name)==0)return i;
+  if(pack == NULL)return -1;
+  if(pack_altname == NULL){fprintf(stderr, "pack_altname not inited\n"); return -1;}
+  for(int i=0; i<packnum; i++){
+    if(strcmp(name, pack[i].name)==0)return i;
+    if(pack_altname[i]!=NULL)if(strcmp(name, pack_altname[i])==0)return i;
   }
   return -1;
 }
 void package_free(){
-  if(packages)free(packages);
-  packages = NULL; packagenum = 0; packagealloc = 0;
+  if(!pack_altname)return;
+  for(int i=0; i<packnum; i++)if(pack_altname[i])free(pack_altname[i]);
+  free(pack_altname);
+  pack_altname = NULL;
 }
 
 void mcu_parse(char *buf){
@@ -182,7 +160,8 @@ void mcu_free(){
   for(int i=0; i<mcun; i++){
     if(mcu[i].packname)free(mcu[i].packname);
     if(mcu[i].per){
-      for(int j=0; j<mcu[i].pack->npins; j++){
+      for(int j=0; j<mcu[i].pack->pinn; j++){
+        //printf("mcu [%s.%s].%i = %s\n", mcu[i].name, altname(i), j, mcu[i].per[j].funcs);
         if(mcu[i].per[j].funcs)free(mcu[i].per[j].funcs);
       }
       free(mcu[i].per);
@@ -197,10 +176,10 @@ void mcu_resolv_deps(){
     if(mcu[i].packname == NULL)continue;
     int idx = pack_search(mcu[i].packname);
     if(idx >= 0){
-      mcu[i].pack = &(packages[idx]);
+      mcu[i].pack = &(pack[idx]);
       free(mcu[i].packname);
       mcu[i].packname = NULL;
-      int np = mcu[i].pack->npins;
+      int np = mcu[i].pack->pinn;
       mcu[i].per = malloc(sizeof(periphlist_t) * np);
       if(mcu[i].per == NULL){
         fprintf(stderr, "Not enough memory\n");
@@ -211,24 +190,27 @@ void mcu_resolv_deps(){
         mcu[i].per[j].num[0] = 0;
         mcu[i].per[j].funcs = NULL;
       }
+    }else{
+      fprintf(stderr, "MCU [%s]: package [%s] not found\n", mcu[i].name, mcu[i].packname);
     }
   }
 }
 void mcu_show(){
   if(mcu == NULL)return;
   for(int i=0; i<mcun; i++){
-    printf("%s: %s\n", mcu[i].name, mcu[i].pack->name);
+    printf("%s . %s: %s\n", mcu[i].name, altname(i), mcu[i].pack->name);
     if(mcu[i].per == NULL){printf("err\n"); continue;}
-    for(int j=0; j<mcu[i].pack->npins; j++){
+    for(int j=0; j<mcu[i].pack->pinn; j++){
       printf("%i: %s | %s\n", j, mcu[i].per[j].name, mcu[i].per[j].funcs);
     }
   }
 }
 int str_to_pinnum(char *s, int mcunum){
-  //TODO учесть квадратные сетки и прочую дичь
-  int res;
-  if(sscanf(s, "%i", &res)==1)return res;
-  return 0;
+  pack_t *p = mcu[mcunum].pack;
+  for(int i=0; i<p->pinn; i++){
+    if(strcmp(s, p->pin[i].name)==0)return i;
+  }
+  return -1;
 }
 
 void parse_periph(char *buf){
@@ -271,14 +253,15 @@ void periph_free(){
 }
 
 void test_deps(){
-  if(packages == NULL){fprintf(stderr, "'Packages' section not found\n"); fatalflag = 1; return;}
+  /*if(packages == NULL){fprintf(stderr, "'Packages' section not found\n"); fatalflag = 1; return;}
   for(int i=0; i<packagenum; i++){
     if(packages[i].npins == 0){
       fprintf(stderr, "Wrong pin number in [%s]\n", packages[i].name);
       fatalflag = 1;
       return;
     }
-  }
+  }*/
+#warning TODO
   if(mcu == NULL){fprintf(stderr, "'MCU' section not found\n");fatalflag = 1; return;}
   for(int i=0; i<mcun; i++){
     if(mcu[i].pack == NULL){
@@ -322,7 +305,7 @@ char mcu_match(char *str, int mcuidx){
     char *en = strchr(str, ']');
     if(en == NULL){fprintf(stderr, "%i: Wrong MCU format [%s]\n", linenum, prevstr); return 0;}
     size_t len = en - str;
-    if(strncmp(m->pack->name, str, len)!=0){return 0;}
+    if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(altname(mcuidx), str, len)!=0)){return 0;}
   }
   return 1;
 }
@@ -429,13 +412,18 @@ void content_parse(char *capt, FILE *pf){
       for(int j=0; j<mcun; j++){
         if(mcuflag[pos + j]){
           pin = str_to_pinnum(str, j);
-          strncpy(mcu[j].per[pin].name, name, 20);
-          strncpy(mcu[j].per[pin].num, str, 10);
-          if(mcu[j].per[pin].funcs == NULL){
-            mcu[j].per[pin].funcs = strdup(per);
+          if((pin < 0) || (pin>=mcu[j].pack->pinn)){
+            fprintf(stderr, "MCU [%s.%s]: pin [%s] not found\n", mcu[j].name, mcu[j].pack->name, str);
           }else{
-            mcu[j].per[pin].funcs = realloc(mcu[j].per[pin].funcs, strlen(mcu[j].per[pin].funcs) + strlen(per));
-            mcu[j].per[pin].funcs = strcat(mcu[j].per[pin].funcs, per);
+            strncpy(mcu[j].per[pin].name, name, 20);
+            strncpy(mcu[j].per[pin].num, str, 10);
+            if(mcu[j].per[pin].funcs == NULL){
+              mcu[j].per[pin].funcs = strdup(per);
+            }else{
+              //printf("%i realloc %s.%s([%i]%s) = [%s] + [%s]\n", linenum, mcu[j].name, altname(j), pin, mcu[j].pack->pin[pin].name, mcu[j].per[pin].funcs, per);
+              mcu[j].per[pin].funcs = realloc(mcu[j].per[pin].funcs, strlen(mcu[j].per[pin].funcs)+strlen(per)+2);
+              strcat(mcu[j].per[pin].funcs, per);
+            }
           }
           //printf("%s: %i | %s\n", mcu[j].name, pin, per);
         }
@@ -450,12 +438,16 @@ void content_parse(char *capt, FILE *pf){
 void test_mcu_complete(){
   for(int i=0; i<mcun; i++){
     int pins = 0;
-    for(int j=0; j<mcu[i].pack->npins; j++){
+    int pinn = 0;
+    for(int j=0; j<mcu[i].pack->pinn; j++){
       if(mcu[i].per && mcu[i].per[j].funcs)pins++;
+      if(mcu[i].pack->pin[j].name[0] != 0)pinn++;
     }
     float p = pins;
-    p = p*100 / mcu[i].pack->npins;
-    printf("[%s.%s]:\t%i / %i = %.1f%%\n", mcu[i].name, mcu[i].pack->name, pins, mcu[i].pack->npins, p);
+    p = p*100 / pinn;
+    //int idx = ((size_t)mcu[i].pack - (size_t)pack)/sizeof(pack_t);
+    //printf("[%s.%s]:\t%i / %i = %.1f%%\n", mcu[i].name, pack_altname[idx], pins, mcu[i].pack->pinn, p);
+    printf("[%s.%s]:\t%i / %i = %.1f%%\n", mcu[i].name, altname(i), pins, pinn, p);
   }
 }
 
@@ -523,7 +515,7 @@ void pack_import(char *filename, void *data){
   pack_t *p = pack_load(filename);
   if(p == NULL)return;
   if(packnum+1 >= packalloc){
-    printf("realloc %i\n", packalloc + packalloc_dn);
+    //printf("realloc %i\n", packalloc + packalloc_dn);
     pack_t *prev = pack;
     pack = realloc(pack, sizeof(pack_t)*(packalloc + packalloc_dn));
     if(pack == NULL){
@@ -541,11 +533,19 @@ void pack_import(char *filename, void *data){
 }
 void packs_import(char *dirname){
   dirfiles_read(dirname, ".kicad_mod", pack_import, NULL);
+  char **prev = pack_altname;
+  pack_altname = realloc(pack_altname, sizeof(char*)*packnum);
+  if(pack_altname == NULL){
+    fprintf(stderr, "Not enough memory\n");
+    fatalflag = 1;
+    free(prev);
+  }
+  for(int i=0; i<packnum; i++)pack_altname[i] = strdup("");
 }
 void packs_show(){
   if(pack == NULL)return;
   for(int i=0; i<packnum; i++){
-    printf("%i: [%s](%i)\n", i, pack[i].name, pack[i].pinn);
+    //printf("%i: [%s](%i)\n", i, pack[i].name, pack[i].pinn);
     //pack_test(&pack[i]);
   }
 }
@@ -574,6 +574,7 @@ void html_write_style(FILE *pf){
     "  }\n"
     "  th{\n"
     "    background: #b0e0e6; /* Цвет фона */ \n"
+    "    position: sticky; top: 0; /*Зафиксировать заголовок*/\n"
     "  }\n"
     "  .noBorder, .noBorder th, .noBorder td {\n"
     "    border: none !important; /* В результате границы становятся абсолютно незаметными */ \n"
@@ -589,18 +590,44 @@ void html_write_style(FILE *pf){
     "  box-sizing     : border-box;\n"
     "  border: none;\n"
     "  height: 20px;\n"
+    "  width: 20px;\n"
+    "}\n"
+    "input[type=\"text\"]{\n"
+    "  box-sizing: border-box;\n"
+    "  border: none;\n"
+    "  height: 20px;\n"
+    "}\n"
+    "#col-1 {\n"
+    "  position: relative;\n"
+    "  width: 70%%;\n"
+    "  float: left;\n"
+    "  height: 100%%;\n"
+    "}\n"
+    "\n"
+    "#col-2 {\n"
+    "  position: relative;\n"
+    "  width: 30%%;\n"
+    "  float: right;\n"
+    "  height: 100%%;\n"
+    "}\n"
+    ".table_wrapper{\n"
+    "  display: block;\n"
+    "  overflow-x: auto;\n"
+    "  height: 80%%;\n"
+    "  white-space: nowrap;\n"
     "}\n"
   );
 }
 
+void html_write_drawfuncs(FILE *pf, float size);
 void html_write_scripts(FILE *pf){
   fprintf(pf, "function SelectPeriph(name){\n");
-  fprintf(pf, "  var mcu = document.getElementById(\"mcuselected\").value;\n");
-  fprintf(pf, "  var tbl = document.getElementsByName(mcu);\n");
-  fprintf(pf, "  var ctl = document.getElementsByName(\"Per.\"+name);\n");
-  fprintf(pf, "  var hdr = tbl[0].children[0].children[0];\n");
-  fprintf(pf, "  var idx = -1;\n");
-  fprintf(pf, "  var vis = \"\";\n");
+  fprintf(pf, "  let mcu = document.getElementById(\"mcuselected\").value;\n");
+  fprintf(pf, "  let tbl = document.getElementsByName(mcu);\n");
+  fprintf(pf, "  let ctl = document.getElementsByName(\"Per.\"+name);\n");
+  fprintf(pf, "  let hdr = tbl[0].children[0].children[0];\n");
+  fprintf(pf, "  let idx = -1;\n");
+  fprintf(pf, "  let vis = \"\";\n");
   fprintf(pf, "  for(let i=0; i<hdr.children.length; i++){\n");
   fprintf(pf, "    if(hdr.children[i].innerText == name){idx = i; break;}\n");
   fprintf(pf, "  }\n");
@@ -614,73 +641,88 @@ void html_write_scripts(FILE *pf){
   fprintf(pf, "    hdr.children[i].children[idx].hidden = hid;\n");
   fprintf(pf, "  }\n");
   fprintf(pf, "}\n\n");
+
+  fprintf(pf, "function SrvVisible(){\n"
+              "  let mcu = document.getElementById(\"mcuselected\").value;\n"
+              "  let tbl = document.getElementsByName(mcu);\n"
+              "  let ctl = document.getElementById(\"srvsel\").value;\n"
+              "  let sh_F=true, sh_O=true;\n"
+              "  let check = document.getElementsByName(\"Per.Service\")[0];\n"
+              "  if(ctl == \"srv_show\"){sh_F=true; sh_O=true;}\n"
+              "  if(ctl == \"srv_opt\"){sh_F=false; sh_O=true;}\n"
+              "  if(ctl == \"srv_hide\"){sh_F=false; sh_O=false;}\n"
+              "  tbl = tbl[0].children[1].children;\n"
+              "  for(let i=0; i<tbl.length; i++){\n"
+              "    if(tbl[i].className == \"tbl_srv_F\"){\n"
+              "      tbl[i].hidden = !sh_F;\n"
+              "    }else if(tbl[i].className == \"tbl_srv_O\"){\n"
+              "      tbl[i].hidden = !sh_O;\n"
+              "    }else{\n"
+              "      tbl[i].hidden = false;\n"
+              "    }\n"
+              "  }\n"
+              "  check.checked = sh_O;\n"
+              "  SelectPeriph('Service');\n"
+              "}\n\n");
   
-  fprintf(pf, "function SrvVisible(){\n");
-  fprintf(pf, "  var mcu = document.getElementById(\"mcuselected\").value;\n");
-  fprintf(pf, "  var tbl = document.getElementsByName(mcu);\n");
-  fprintf(pf, "  var ctl = document.getElementById(\"srvsel\").value;\n");
-  fprintf(pf, "  var sh_F=true, sh_O=true;\n");
-  fprintf(pf, "  if(ctl == \"srv_show\"){sh_F=true; sh_O=true;}\n");
-  fprintf(pf, "  if(ctl == \"srv_opt\"){sh_F=false; sh_O=true;}\n");
-  fprintf(pf, "  if(ctl == \"srv_hide\"){sh_F=false; sh_O=false;}\n");
-  fprintf(pf, "  tbl = tbl[0].children[1].children;\n");
-  fprintf(pf, "  for(let i=0; i<tbl.length; i++){\n");
-  fprintf(pf, "    if(tbl[i].className == \"tbl_srv_F\"){\n");
-  fprintf(pf, "      tbl[i].hidden = !sh_F;\n");
-  fprintf(pf, "    }else if(tbl[i].className == \"tbl_srv_O\"){\n");
-  fprintf(pf, "      tbl[i].hidden = !sh_O;\n");
-  fprintf(pf, "    }else{\n");
-  fprintf(pf, "      tbl[i].hidden = false;\n");
-  fprintf(pf, "    }\n");
-  fprintf(pf, "  }\n");
-  fprintf(pf, "  console.log(ctl.value);\n");
-  fprintf(pf, "}\n\n");
+  fprintf(pf, "function SelectColor(linenum){\n"
+              "  var mcu = document.getElementById(\"mcuselected\").value;\n"
+              "  var tbl = document.getElementsByName(mcu);\n"
+              "  var lin = tbl[0].children[1];\n"
+              "  var col = -1;\n"
+              "  lin = tbl[0].children[1].children[linenum].getElementsByTagName(\"input\");\n"
+              "  for(let i=0; i<lin.length; i++){\n"
+              "    if(lin[i].name == \"usersel\"){\n"
+              "      col = lin[i].value;\n"
+              "      break;\n"
+              "    }\n"
+              "  }\n"
+              "  if(col == -1)return;\n"
+              "  lin = tbl[0].children[1].children[linenum];\n"
+              "  if(col == \"#ffffff\")col=\"\";\n"
+              "  lin.bgColor = col;\n"
+              "}\n\n");
   
-  fprintf(pf, "function SelectColor(linenum){\n");
-  fprintf(pf, "  var mcu = document.getElementById(\"mcuselected\").value;\n");
-  fprintf(pf, "  var tbl = document.getElementsByName(mcu);\n");
-  fprintf(pf, "  var lin = tbl[0].children[1];\n");
-  fprintf(pf, "  var col = -1;\n");
-  fprintf(pf, "  lin = tbl[0].children[1].children[linenum].getElementsByTagName(\"input\");\n");
-  fprintf(pf, "  for(let i=0; i<lin.length; i++){\n");
-  fprintf(pf, "    if(lin[i].name == \"usersel\"){\n");
-  fprintf(pf, "      col = lin[i].value;\n");
-  fprintf(pf, "      break;\n");
-  fprintf(pf, "    }\n");
-  fprintf(pf, "  }\n");
-  fprintf(pf, "  if(col == -1)return;\n");
-  fprintf(pf, "  lin = tbl[0].children[1].children[linenum];\n");
-  fprintf(pf, "  lin.bgColor = col;\n");
-  fprintf(pf, "}\n\n");
+  fprintf(pf, "function SelectMCU(){\n"
+              "  var mcu = document.getElementById(\"mcuselected\").value;\n"
+              "  var tables = document.getElementsByTagName(\"table\");\n"
+              "  for(let i=0; i<tables.length; i++){\n"
+              "    tables[i].hidden = (tables[i].attributes.name.value != mcu);\n"
+              "  }\n"
+              "  Periph_Vis_update();\n"
+              "  package_draw();\n"
+              "}\n\n");
   
-  fprintf(pf, "function SelectMCU(){\n");
-  fprintf(pf, "  var mcu = document.getElementById(\"mcuselected\").value;\n");
-  fprintf(pf, "  var tables = document.getElementsByTagName(\"table\");\n");
-  fprintf(pf, "  for(let i=0; i<tables.length; i++){\n");
-  fprintf(pf, "    tables[i].hidden = (tables[i].attributes.name.value != mcu);\n");
-  fprintf(pf, "  }\n");
-  fprintf(pf, "}\n\n");
-  
-  fprintf(pf, "function OnLoad(){\n");
-  fprintf(pf, "  SelectMCU();\n");
-  fprintf(pf, "  SrvVisible();\n");
+  fprintf(pf, "function Periph_Vis_update(){\n"
+              "  SrvVisible();\n");
   for(int i=0; i<periphn; i++){
     fprintf(pf, "  SelectPeriph('%s');\n", periph[i].name);
   }
-  fprintf(pf, "  SelectPeriph('Other');\n");
-  fprintf(pf, "}\n");
+  fprintf(pf, "  SelectPeriph('Other');\n"
+              "  SelectPeriph('Service');\n"
+              "}\n");
+  
+  
+  fprintf(pf, "function OnLoad(){\n"
+              "  SelectMCU();\n"
+              "  Periph_Vis_update()\n"
+              "}\n");
+  
+  html_write_drawfuncs(pf, 500);
 }
 
 void html_write_ui(FILE *pf){
   fprintf(pf, "<select id=\"mcuselected\" onchange=\"SelectMCU()\">\n");
   for(int i=0; i<mcun; i++){
-    fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[i].name, mcu[i].pack->name, mcu[i].name, mcu[i].pack->name);
+    //fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[i].name, mcu[i].pack->name, mcu[i].name, mcu[i].pack->name);
+    fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[i].name, altname(i), mcu[i].name, altname(i));
   }
   fprintf(pf, "</select>\n\n<br>\n");
   for(int i=0; i<periphn; i++){
     fprintf(pf, "<label for=\"Per.%s\">%s</label><input type=\"checkbox\" id=\"Per.%s\" name=\"Per.%s\" checked onclick=\"SelectPeriph('%s');\"/>\n", periph[i].name, periph[i].name, periph[i].name, periph[i].name, periph[i].name);
   }
   fprintf(pf, "<label for=\"Per.%s\">%s</label><input type=\"checkbox\" id=\"Per.%s\" name=\"Per.%s\" checked onclick=\"SelectPeriph('%s');\"/>\n", "Other", "Other", "Other", "Other", "Other");
+  fprintf(pf, "<input type=\"checkbox\" id=\"Per.Service\" name=\"Per.Service\" checked onclick=\"SelectPeriph('Service');\" hidden/>\n");
   fprintf(pf, "\n<br>\n");
   
   fprintf(pf, "<select id=\"srvsel\" onchange=\"SrvVisible()\">\n");
@@ -693,7 +735,7 @@ void html_write_ui(FILE *pf){
 void html_write_table(FILE *pf, int idx){
   mcu_t *m = &(mcu[idx]);
   if(m->per == NULL)return;
-  fprintf(pf, "<table name=\"%s.%s\" hidden>\n", m->name, m->pack->name);
+  fprintf(pf, "<table name=\"%s.%s\" onmouseleave=\"table_onmouse(-1);\" hidden>\n", m->name, altname(idx));
   fprintf(pf, "  <thead>\n    <tr>\n");
   
   fprintf(pf, "      <th><div>Pin</div></th>\n");
@@ -703,43 +745,105 @@ void html_write_table(FILE *pf, int idx){
   }
   fprintf(pf, "      <th><div>Service</div></th>\n");
   fprintf(pf, "      <th><div>Other</div></th>\n");
-  fprintf(pf, "      <th><div>Sel</div></th>\n");
+  fprintf(pf, "      <th><div>Col</div></th>\n");
+  fprintf(pf, "      <th class=\"tbl_pinname\"><div>PN</div></th>\n");
   fprintf(pf, "      <th><div>Comment</div></th>\n");
   fprintf(pf, "    </tr>\n  </thead>\n");
   fprintf(pf, "  <tbody>\n");
   int ln = 0;
-  for(int i=0; i<m->pack->npins; i++){
+  for(int i=0; i<m->pack->pinn; i++){
     if(m->per[i].name[0] == 0)continue;
     char *srv = match_periph(m->per[i].funcs, &per_srv);
     if(srv[0]==0){
-      fprintf(pf, "    <tr>\n");
+      fprintf(pf, "    <tr onmousemove=\"table_onmouse(%i);\">\n", i);
     }else{
-      fprintf(pf, "    <tr class=\"tbl_srv_%c\">\n", srv[0]);
+      fprintf(pf, "    <tr class=\"tbl_srv_%c\" onmousemove=\"table_onmouse(%i);\">\n", srv[0], i);
     }
+    //Fixed fields: num, name
     fprintf(pf, "      <td><div>%s</div></td>\n", m->per[i].num);
     fprintf(pf, "      <td><div>%s</div></td>\n", m->per[i].name);
+    //Variable fields: periph
     for(int j=0; j<periphn; j++){
       fprintf(pf, "      <td><div>%s</div></td>\n", match_periph(m->per[i].funcs, &periph[j]));
     }
+    //Fixed field: SRV
     srv = match_periph(m->per[i].funcs, &per_srv);
-    if(srv[0]!=0)srv+=2;
+    if(srv[0]!=0){
+      srv+=2;
+      for(char *ch = srv+2; ch[0]!=0; ch++){
+        if(((ch[0] == 'F')||(ch[0]=='O'))&&(ch[1]=='.')){ch[0]=' '; ch[1]=' '; ch+=2;}
+      }
+    }
     fprintf(pf, "      <td><div>%s</div></td>\n", srv);
+    //Fixed field: 'Other'
     fprintf(pf, "      <td><div>%s</div></td>\n", match_periph(m->per[i].funcs, NULL)); //Other
-    fprintf(pf, "      <td><div><input name=\"usersel\" type=\"color\" value=\"#ffffff\" onchange=\"SelectColor(%i);\"/></div></td>\n", ln); //Sel
+    //Fixed fields: Col, PN, Comment
+    fprintf(pf, "      <td><input name=\"usersel\" type=\"color\" value=\"#ffffff\" onchange=\"SelectColor(%i);\"/></td>\n", ln); //Sel
     ln++;
+    fprintf(pf, "      <td><input type=\"text\" value=\"\" size=\"2\"/></td>\n"); //PN
     fprintf(pf, "      <td><div><input type=\"text\" value=\"\"/></div></td>\n"); //Comment
   }
   fprintf(pf, "  </tbody>\n</table>\n");
 }
 
 void html_write_tables(FILE *pf){
+  fprintf(pf, "<div id=\"col-1\">\n");
+  fprintf(pf, "<div class=\"table_wrapper\">\n");
   for(int i=0; i<mcun; i++){
     html_write_table(pf, i);
   }
+  fprintf(pf, "</div>\n");
+  fprintf(pf, "</div>\n");
 }
 
-#warning TODO: добавить проверку не выходит ли номер ножки за пределы выделенного
-#warning TODO: добавить скриптование перевода номера ножки в сквозную нумерацию
+void html_write_canvas(FILE *pf, float size){
+  fprintf(pf, "<div id=\"col-2\">\n");
+  fprintf(pf, "  <canvas style=\"position:fixed; top:100px; left:70%%\" id=\"canvas\" width=\"%f\" height=\"%f\">Package</canvas>\n", size, size);
+  fprintf(pf, "</div>\n");
+}
+
+void html_write_drawfuncs(FILE *pf, float size){
+  fprintf(pf, "function package_draw(){\n"
+              "  const funcs = [\n");
+  for(int i=0; i<mcun; i++){
+    fprintf(pf, "    [\"%s.%s\", package_draw_%s_%s],\n", mcu[i].name, altname(i), mcu[i].name, altname(i));
+  }
+  fprintf(pf, "  ];\n"
+              "  const canvas = document.getElementById(\"canvas\");\n"
+              "  if( !canvas.getContext )return;\n"
+              "  const ctx = canvas.getContext(\"2d\");\n"
+              "  let mcu = document.getElementById(\"mcuselected\").value \n"
+              "  let tbl = document.getElementsByName(mcu);\n");
+  fprintf(pf, "  let x=0, y=0, scale=%f;\n", size);
+  fprintf(pf, "  var pkg_draw_prev = -1;\n"
+              "  for(let i=0; i<funcs.length; i++){\n"
+              "    if(funcs[i][0] == mcu){\n"
+              "      if(pkg_draw_prev != i){\n"
+              "        ctx.save();\n"
+              "        ctx.fillStyle =\"#ffffff\";\n"
+              "        ctx.fillRect(0,0,5000,5000);\n"
+              "        ctx.restore();\n"
+              "        pkg_draw_prev = i;\n"
+              "      }\n"
+              "      funcs[i][1](ctx, tbl[0].children[1].children, x, y, scale); \n"
+              "      break;\n"
+              "    }\n"
+              "  }\n"
+              "  //draw_mcu(ctx, tbl[0].children[1].children, x, y, scale); \n"
+              "}\n"
+              "var table_selected = -1;\n"
+              "window.addEventListener(\"load\", package_draw);\n"
+              "function table_onmouse(idx){\n"
+              "  table_selected = idx;\n"
+              "  package_draw();\n"
+              "}\n"
+              "\n");
+  for(int i=0; i<mcun; i++){
+    fprintf(pf, "function package_draw_%s_%s(ctx, tbl, x, y, scale){\n", mcu[i].name, altname(i));
+    pack_html_export(mcu[i].pack, pf);
+    fprintf(pf, "}\n");
+  }
+}
 
 void html_write(FILE *pf){
   fprintf(pf, "<head>\n\n<style type=\"text/css\">\n");
@@ -749,10 +853,12 @@ void html_write(FILE *pf){
   html_write_scripts(pf);
   fprintf(pf, "\n</script>\n\n");
   fprintf(pf, "\n\n</head>\n\n<body onload=\"OnLoad();\">\n\n");
+  //fprintf(pf, "<form style=\"position:fixed; top:10px; left:10px%%\">\n\n");
   fprintf(pf, "<form>\n\n");
   html_write_ui(pf);
   fprintf(pf, "\n\n</form>\n\n");
   html_write_tables(pf);
+  html_write_canvas(pf, 500);
   fprintf(pf, "\n\n</body>\n");
 }
 
@@ -766,6 +872,7 @@ void html_write(FILE *pf){
     || defined(__APPLE__) || defined(__MACH__)
     
 #include <dirent.h>
+#include <sys/stat.h>
 void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void *userdata){
   DIR *dir;
   struct dirent *entry;
@@ -780,7 +887,9 @@ void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void 
       callback(dirname, userdata);
       return;
     }else{
-      fprintf(stderr, "Unable to open [%s]\n", dirname);
+      struct stat st;
+      stat(dirname, &st);
+      if( (st.st_mode & S_IFMT) == S_IFDIR )fprintf(stderr, "Unable to open [%s]\n", dirname);
       return;
     }
   }
@@ -788,7 +897,6 @@ void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void 
   while( (entry = readdir(dir)) != NULL){
     char *name = entry->d_name;
     if(name[0] == '.')continue;
-    unsigned char type = entry->d_type;
     leaflen = strlen(name);
     char *newname = malloc(rootlen + leaflen + 2);
     memcpy(newname, dirname, rootlen);
@@ -937,28 +1045,13 @@ void test(pack_t *p){
 }
 
 int main1(int argc, char **argv){
-#if 1
   if(argc < 2){printf("select file name\n"); return 0;}
   pack_t *p;
   p = pack_load(argv[1]);
   test(p);
   pack_test(p);
   pack_free(p);
-#elif 0
-  p = pack_load("packages_KiCad/LQFP-32_7x7mm_P0.8mm.kicad_mod");
-  pack_test(p);
-  test(p);
-  pack_free(p);
-#endif
-}
-
-void files_test(char *name, void *data){
-  printf("[%s]\n", name);
-}
-int main2(int argc, char **argv){
-  //dirfiles_read("packages_KiCad", ".kicad_mod", files_test, NULL);
-  //dirfiles_read("footprints", ".kicad_mod", files_test, NULL);
-  dirfiles_read(argv[1], ".kicad_mod", files_test, NULL);
+  return 0;
 }
 
 #define StrEq(str, templ) (strncmp(str, templ, sizeof(templ)-1)==0)
@@ -969,7 +1062,7 @@ int main(int argc, char **argv){
   if(argc < 2){help(argv[0]); return 0;}
   for(int i=1; i<argc; i++){
     if(StrEq(argv[i], "--config=")){
-      configfile = argv[i] + sizeof("--config=") - 1;
+      //configfile = argv[i] + sizeof("--config=") - 1;
     }else if(StrEq(argv[i], "--packages=")){
       packs_import(argv[i] + sizeof("--packages=") - 1);
     }else{
@@ -979,6 +1072,9 @@ int main(int argc, char **argv){
         outputfile = argv[i];
       }
     }
+  }
+  for(int i=0; i<sizeof(pack_defaultpath)/sizeof(pack_defaultpath[0]); i++){
+    packs_import((char*)pack_defaultpath[i]);
   }
   packs_show();
   if(inputfile == NULL){
@@ -1018,7 +1114,7 @@ int main(int argc, char **argv){
   
   //package_show();
   //mcu_show();
-  //test_mcu_complete();
+  test_mcu_complete();
   
   pf = fopen(outputfile, "w");
   html_write(pf);
@@ -1028,8 +1124,9 @@ int main(int argc, char **argv){
 destroy_all:
   periph_free();
   mcu_free();
-  package_free();
-  packs_free();
+  //package_free();
+  //packs_free();
   
   if(alloc_out){free(outputfile);}
+  return 0;
 }
