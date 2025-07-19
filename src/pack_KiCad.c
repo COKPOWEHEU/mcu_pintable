@@ -359,13 +359,26 @@ void pack_html_export(pack_t *p, FILE *pf){
       fprintf(pf, "    ['c', %f, %f, %f, %f],//%i\n", x,y, w/2,h/2, i);
     }
   }
+  fprintf(pf, "  ];\n");
+  fprintf(pf, "  const pin_names = [\n");
+  int tblnum = 0;
+  for(int i=0; i<p->pinn; i++){
+    float x = p->pin[i].x;
+    float y = p->pin[i].y;
+    char orient = 'h';
+    if(p->pin[i].w*1.1 < p->pin[i].h)orient = 'v';
+    int pnum = tblnum;
+    if(p->pin[i].name[0] != 0)tblnum++; else pnum = -1;
+    fprintf(pf, "    ['%c', %f, %f, \"%s\", %i], //%i\n", orient, x, y, p->pin[i].name, pnum, i);
+  }
   fprintf(pf, "  ];\n"
               "\n"
               "  for(let i=0; i<pins.length; i++){\n"
               "    let col = \"rgb(200 200 200)\";\n"
-              "    if(i < tbl.length){\n"
-              "      if(tbl[i].bgcolor != \"\"){\n"
-              "        col = tbl[i].bgColor;\n"
+              "    let idx = pin_names[i][4];\n"
+              "    if((idx >= 0)&&(idx < tbl.length)){\n"
+              "      if(tbl[idx].bgcolor != \"\"){\n"
+              "        col = tbl[idx].bgColor;\n"
               "      }\n"
               "    }\n"
               "    ctx.fillStyle = col;\n"
@@ -388,26 +401,18 @@ void pack_html_export(pack_t *p, FILE *pf){
               "  ctx.textBaseline = \"middle\";\n"
               "  ctx.textAlign = \"center\";\n");
   fprintf(pf, "  ctx.font = scale*%f + \"px serif\";\n", sz);
-  fprintf(pf, "  const pin_names = [\n");
-  for(int i=0; i<p->pinn; i++){
-    float x = p->pin[i].x;
-    float y = p->pin[i].y;
-    char orient = 'h';
-    if(p->pin[i].w*1.1 < p->pin[i].h)orient = 'v';
-    
-    fprintf(pf, "    ['%c', %f, %f, \"%s\"], //%i\n", orient, x, y, p->pin[i].name, i);
-  }
-  fprintf(pf,"  ];\n"
-             "\n"
-             "  let idx = -1;\n"
+  
+  fprintf(pf, "\n"
+             "  let colnum = -1;\n"
              "  let hdr = tbl[0].parentElement.parentElement.children[0].children[0].children;\n"
              "  for(let i=0; i<hdr.length; i++){\n"
-             "    if(hdr[i].className == \"tbl_pinname\"){idx = i; break;}\n"
+             "    if(hdr[i].className == \"tbl_pinname\"){colnum = i; break;}\n"
              "  }\n"
              "  for(let i=0; i<pin_names.length; i++){\n"
              "    let name = pin_names[i][3];\n"
-             "    if((idx >= 0) && (i < tbl.length)){\n"
-             "      let val = tbl[i].children[idx].children[0].value;\n"
+             "    let idx = pin_names[i][4];\n"
+             "    if((colnum >= 0) && (idx >= 0) && (idx < tbl.length)){\n"
+             "      let val = tbl[idx].children[colnum].children[0].value;\n"
              "      if(val != \"\")name = val;\n"
              "    }\n"
              "    if(pin_names[i][0] == 'h'){\n"
@@ -452,7 +457,8 @@ void pack_html_export(pack_t *p, FILE *pf){
       a2 = atan2f( y2-Y, x2-X );
       a3 = atan2f( y3-Y, x3-X );
       char dir = 0;
-      fprintf(pf, "  ctx.arc(x+%f*scale, y+%f*scale, %f, %f, %f, %s); //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
+      fprintf(pf, "  ctx.moveTo(x + %f*scale, x + %f*scale);", X, Y);
+      fprintf(pf, " ctx.arc(x+%f*scale, y+%f*scale, %f*scale, %f, %f, %s); //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
     }
   }
   fprintf(pf, "  ctx.stroke();\n");

@@ -7,8 +7,8 @@ Periph: GPIO[P]; 5VT[5]; TIM; Analog[A]; UART; SPI; I2C; CAN; USB; Ethernet
 Content:
 | Name    | [QFN20X3] | [LQFP32] | [LQFP48];[QFN48X7] | Periph |
 |---------|------------------------------------------|--------|
-|   GND   |    0      |    -     |          0        | SRV.F.GND  |
-|   Vbat  |    -      |    -     |          1        | SRV.F.VCC  |
+|   GND   |    21     |    -     |         49        | SRV.F.GND  |
+|   Vbat  |    -      |    -     |          1        | SRV.F.VCC |
 |   PC13  |    -      |    -     |          2        | P.PC13; TAMPER_RTC |
 |   PC14  |    -      |    -     |          3        | P.PC14; SRV.O.OSC32_IN |
 |   PC15  |    -      |    -     |          4        | P.PC15; SRV.O.OSC32_OUT |
@@ -94,7 +94,7 @@ Content:
 Content:
 | Name | CH32V203F6P6 | CH32V203G6U6 | Periph |
 |------|--------------|--------------|--------|
-| GND  |     -        |   0          | SRV.F.GND  |
+| GND  |     -        |   29         | SRV.F.GND  |
 |OSC_IN|     2        |   2          | SRV.O.OSC_IN; P.PD0 |
 |OSC_OUT|    3        |   3          | SRV.O.OSC_OUT; P.PD1 |
 | NRST |     4        |   4          | SRV.F.NRST |
