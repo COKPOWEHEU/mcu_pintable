@@ -16,6 +16,7 @@ typedef struct{
   void *intr;
 }pack_t;
 
+char* pack_search_name(char *filename);
 pack_t* pack_load(char *filename);
 void pack_free(pack_t *p);
 void pack_test(pack_t *p);

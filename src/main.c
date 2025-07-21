@@ -5,8 +5,22 @@
 #include <ctype.h>
 #include "pack_KiCad.h"
 
-//char *configfile = "config.cfg";
 const char *pack_defaultpath[] = {"./"};
+char **pack_path = NULL;
+size_t pack_path_num = 0;
+
+void pack_path_append(char *str){
+#warning TODO
+  pack_path = realloc(pack_path, sizeof(char*)*(pack_path_num + 1));
+  pack_path[pack_path_num] = strdup(str);
+  pack_path_num++;
+}
+void pack_path_free(){
+  if(pack_path == NULL)return;
+  for(int i=0; i<pack_path_num; i++)free(pack_path[i]);
+  free(pack_path);
+}
+
 
 int linenum = 0;
 char fatalflag = 0;
@@ -36,11 +50,19 @@ void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 pack_t *pack = NULL;
-char **pack_altname = NULL;
-#define altname(i) pack_altname[ ((size_t)mcu[i].pack - (size_t)pack) / sizeof(pack_t) ]
 size_t packnum = 0;
 size_t packalloc = 0;
 const size_t packalloc_dn = 10;
+
+typedef struct{
+  char *name;
+  char *path;
+  int pack_idx;
+}pack_list_t;
+pack_list_t *pack_list = NULL;
+size_t pack_list_num = 0;
+size_t pack_list_alloc = 0;
+const size_t pack_list_dn = 5;
 
 typedef struct{
   char name[20];
@@ -80,43 +102,50 @@ void packages_parse(char *buf){
   const char delim[] = "; \t\r\n";
   char *str = strtok(buf, delim);
   int res;
-  if(pack_altname == NULL){fprintf(stderr, "package list is empty\n"); return;}
+  
   while(str != NULL){
     char name[100], altname[100];
     res = sscanf(str, "%100[^[][%100[^]]]", altname, name);
     if(res < 1){fprintf(stderr, "Wrong format at %i\n", linenum); fatalflag=1; return;}
-    int idx = -1;
-    for(int i=0; i<packnum; i++){
-      if(strcmp(altname, pack[i].name)==0){idx = i; break;}
-      if(res > 1)if(strcmp(name, pack[i].name)==0){idx = i; break;}
+    
+    if(pack_list_num+1 >= pack_list_alloc){
+#warning TODO
+      pack_list = realloc(pack_list, sizeof(pack_list_t)*(pack_list_alloc + pack_list_dn));
+      pack_list_alloc += pack_list_dn;
     }
-    //printf("pack %i [%s|%s]\n", idx, name, altname);
-    if(idx >= 0){
-      if(pack_altname[idx])free(pack_altname[idx]);
-      if(res == 2){
-        pack_altname[idx] = strdup(altname);
-      }else{
-        pack_altname[idx] = strdup(name);
-      }
-    }
+    pack_list[pack_list_num].name = strdup(altname);
+    if(res == 2)pack_list[pack_list_num].path = strdup(name); else pack_list[pack_list_num].name = strdup(altname);
+    pack_list[pack_list_num].pack_idx = -1;
+    pack_list_num++;
     
     str = strtok(NULL, delim);
   }
 }
+
 int pack_search(char *name){
   if(pack == NULL)return -1;
-  if(pack_altname == NULL){fprintf(stderr, "pack_altname not inited\n"); return -1;}
   for(int i=0; i<packnum; i++){
-    if(strcmp(name, pack[i].name)==0)return i;
-    if(pack_altname[i]!=NULL)if(strcmp(name, pack_altname[i])==0)return i;
+    if(strcmp(name, pack[i].name)==0){return i;}
+  }
+  if(pack_list != NULL){
+    for(int i=0; i<pack_list_num; i++){
+      if(strcmp(name, pack_list[i].name)==0){
+        return pack_list[i].pack_idx;
+      }
+    }
   }
   return -1;
 }
 void package_free(){
-  if(!pack_altname)return;
-  for(int i=0; i<packnum; i++)if(pack_altname[i])free(pack_altname[i]);
-  free(pack_altname);
-  pack_altname = NULL;
+  //printf("package free\n");
+  if(pack_list){
+    for(int i=0; i<pack_list_num; i++){
+      //printf("pack [%i] = [%s|%s]\n", i, pack_list[i].name, pack_list[i].path);
+      free(pack_list[i].name);
+      free(pack_list[i].path);
+    }
+    free(pack_list); pack_list_num = 0; pack_list_alloc = 0;
+  }
 }
 
 void mcu_parse(char *buf){
@@ -177,8 +206,6 @@ void mcu_resolv_deps(){
     int idx = pack_search(mcu[i].packname);
     if(idx >= 0){
       mcu[i].pack = &(pack[idx]);
-      free(mcu[i].packname);
-      mcu[i].packname = NULL;
       int np = mcu[i].pack->pinn;
       mcu[i].per = malloc(sizeof(periphlist_t) * np);
       if(mcu[i].per == NULL){
@@ -198,7 +225,7 @@ void mcu_resolv_deps(){
 void mcu_show(){
   if(mcu == NULL)return;
   for(int i=0; i<mcun; i++){
-    printf("%s . %s: %s\n", mcu[i].name, altname(i), mcu[i].pack->name);
+    printf("%s . %s: %s\n", mcu[i].name, mcu[i].packname, mcu[i].pack->name);
     if(mcu[i].per == NULL){printf("err\n"); continue;}
     for(int j=0; j<mcu[i].pack->pinn; j++){
       printf("%i: %s | %s\n", j, mcu[i].per[j].name, mcu[i].per[j].funcs);
@@ -253,21 +280,13 @@ void periph_free(){
 }
 
 void test_deps(){
-  /*if(packages == NULL){fprintf(stderr, "'Packages' section not found\n"); fatalflag = 1; return;}
-  for(int i=0; i<packagenum; i++){
-    if(packages[i].npins == 0){
-      fprintf(stderr, "Wrong pin number in [%s]\n", packages[i].name);
-      fatalflag = 1;
-      return;
-    }
-  }*/
-#warning TODO
+  if(pack == NULL){fprintf(stderr, "'Packages' section not found\n"); fatalflag = 1; return;}
   if(mcu == NULL){fprintf(stderr, "'MCU' section not found\n");fatalflag = 1; return;}
   for(int i=0; i<mcun; i++){
     if(mcu[i].pack == NULL){
       fprintf(stderr, "MCU [%s]: package [%s] not found\n", mcu[i].name, mcu[i].packname);
-      fatalflag = 1;
-      return;
+      //fatalflag = 1;
+      //return;
     }
   }
   if(periph == NULL){fprintf(stderr, "'Periph' section not found\n");fatalflag = 1; return;}
@@ -300,22 +319,28 @@ char mcu_match(char *str, int mcuidx){
     if(strncmp(m->name, str, len)!=0){return 0;}
     str += len;
   }
+  if(m->pack == NULL)return 0;
   if(str[0] == '['){
     str++;
     char *en = strchr(str, ']');
     if(en == NULL){fprintf(stderr, "%i: Wrong MCU format [%s]\n", linenum, prevstr); return 0;}
     size_t len = en - str;
-    if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(altname(mcuidx), str, len)!=0)){return 0;}
+    //if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(altname(mcuidx), str, len)!=0)){return 0;}
+    if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(m->packname, str, len)!=0)){return 0;}
   }
   return 1;
 }
 
+//Чтение заголовка таблицы 'Content'
+//  buf - строка таблицы (считанная ранее из файла)
+//  npacks(return) - количество корпусов, указанных в таблице
+//  tbl(return) - таблица соответствия корпусов и MCU
 void content_read_header(char *buf, int *npacks, char **tbl){
   const char delim[] = "| \t\n";
   const char delim2[]= "; \t";
   char *str = strtok(buf, delim);
   str = strtok(NULL, delim); //skip 'Name' field
-  int np = 0;
+  int mcols = 0; //MCU columns
   char **names;
   names = malloc(sizeof(char*) * mcun);
   if(names == NULL){fprintf(stderr, "Not enough memory\n"); *npacks=0; fatalflag = 1; return;}
@@ -324,25 +349,25 @@ void content_read_header(char *buf, int *npacks, char **tbl){
   //Read MCU names
   while(str != NULL){
     if(strcmp(str, "Periph")==0)break;
-    names[np] = str;
-    np++;
+    names[mcols] = str;
+    mcols++;
     str = strtok(NULL, delim);
   }
   
-  if(np == 0){
+  if(mcols == 0){
     fprintf(stderr, "%i: 'MCU' list not found\n", linenum);
     fatalflag = 1;
     *npacks = 0; *tbl = NULL;
   }
-  *npacks = np;
-  char *res = malloc(sizeof(char) * np * mcun);
+  *npacks = mcols;
+  char *res = malloc(sizeof(char) * mcols * mcun);
   *tbl = res;
   if(res == NULL){
     fprintf(stderr, "Not enough memory\n"); *npacks=0; fatalflag = 1; return;
   }
-  for(int i=0; i<(np*mcun); i++)res[i] = 0;
+  for(int i=0; i<(mcols*mcun); i++)res[i] = 0;
   
-  for(int i=0; i<np; i++){
+  for(int i=0; i<mcols; i++){
     int addr = i*mcun;
     str = strtok(names[i], delim2);
     while(str != NULL){
@@ -360,22 +385,22 @@ void content_parse(char *capt, FILE *pf){
   size_t pos = 0;
   char buf[4096];
   int npacks = 0;
-  char *mcuflag;
+  char *mcu_idx_tbl; //таблица какие MCU входят в данный Content и под какими номерами
   //read table header
   if(fgets(buf, sizeof(buf), pf)==NULL){
     fprintf(stderr, "%i: Unexpected end of file\n", linenum);
     return;
   }
   linenum++;
-  content_read_header(buf, &npacks, &mcuflag);
+  content_read_header(buf, &npacks, &mcu_idx_tbl);
   
   //read table separator
   if(fgets(buf, sizeof(buf), pf)==NULL){
     fprintf(stderr, "%i: Unexpected end of file\n", linenum);
-    if(mcuflag)free(mcuflag);
+    if(mcu_idx_tbl)free(mcu_idx_tbl);
     return;
   }
-  if(mcuflag == NULL)return;
+  if(mcu_idx_tbl == NULL)return;
   linenum++;
   //read content
   while(1){
@@ -390,7 +415,7 @@ void content_parse(char *capt, FILE *pf){
     char *per = strrchr(buf, '|');
     per[0] = 0;
     while(per[0] != '|'){
-      if(per<=buf){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcuflag); return;}
+      if(per<=buf){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcu_idx_tbl); return;}
       per--;
     }
     per[0] = 0;
@@ -399,18 +424,18 @@ void content_parse(char *capt, FILE *pf){
     //find 'Name' field
     const char delim[] = "| \t\n";
     char *str, *name = strtok(buf, delim);
-    if(name == NULL){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcuflag); return;}
+    if(name == NULL){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcu_idx_tbl); return;}
     
     //'MCU' fields
     for(int i=0; i<npacks; i++){
       str = strtok(NULL, delim);
-      if(str == NULL){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcuflag); return;}
+      if(str == NULL){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcu_idx_tbl); return;}
       if(str[0] == '-')continue;
       int pin;
       
       size_t pos = i*mcun;
       for(int j=0; j<mcun; j++){
-        if(mcuflag[pos + j]){
+        if(mcu_idx_tbl[pos + j]){
           pin = str_to_pinnum(str, j);
           if((pin < 0) || (pin>=mcu[j].pack->pinn)){
             fprintf(stderr, "MCU [%s.%s]: pin [%s] not found\n", mcu[j].name, mcu[j].pack->name, str);
@@ -420,17 +445,15 @@ void content_parse(char *capt, FILE *pf){
             if(mcu[j].per[pin].funcs == NULL){
               mcu[j].per[pin].funcs = strdup(per);
             }else{
-              //printf("%i realloc %s.%s([%i]%s) = [%s] + [%s]\n", linenum, mcu[j].name, altname(j), pin, mcu[j].pack->pin[pin].name, mcu[j].per[pin].funcs, per);
               mcu[j].per[pin].funcs = realloc(mcu[j].per[pin].funcs, strlen(mcu[j].per[pin].funcs)+strlen(per)+2);
               strcat(mcu[j].per[pin].funcs, per);
             }
           }
-          //printf("%s: %i | %s\n", mcu[j].name, pin, per);
         }
       }
     }
   }
-  free(mcuflag);
+  free(mcu_idx_tbl);
   linenum--;
   fseek(pf, pos, SEEK_SET);
 }
@@ -439,15 +462,17 @@ void test_mcu_complete(){
   for(int i=0; i<mcun; i++){
     int pins = 0;
     int pinn = 0;
+    if(mcu[i].pack == NULL){
+      printf("[%s.%s]: Package not found\n", mcu[i].name, mcu[i].packname);
+      continue;
+    }
     for(int j=0; j<mcu[i].pack->pinn; j++){
       if(mcu[i].per && mcu[i].per[j].funcs)pins++;
       if(mcu[i].pack->pin[j].name[0] != 0)pinn++;
     }
     float p = pins;
     p = p*100 / pinn;
-    //int idx = ((size_t)mcu[i].pack - (size_t)pack)/sizeof(pack_t);
-    //printf("[%s.%s]:\t%i / %i = %.1f%%\n", mcu[i].name, pack_altname[idx], pins, mcu[i].pack->pinn, p);
-    printf("[%s.%s]:\t%i / %i = %.1f%%\n", mcu[i].name, altname(i), pins, pinn, p);
+    printf("[%s.%s]:\t%i / %i = %.1f%%\n", mcu[i].name, mcu[i].packname, pins, pinn, p);
   }
 }
 
@@ -510,12 +535,32 @@ char* match_periph(char *funcs, periph_t *per){
   return buf;
 }
 
-void pack_import(char *filename, void *data){
-  //printf("[%s]\n", filename);
+void packs_free(){
+  if(pack == NULL)return;
+  for(int i=0; i<packnum; i++){pack_free(&(pack[i]));}
+  free(pack);
+  pack = NULL; packnum = 0; packalloc = 0;
+}
+
+
+void pack_load_callback(char *filename, void *data){
+  char *name = pack_search_name(filename);
+  if(name[0] == 0)return;
+  int found = -1;
+  for(int i=0; i<pack_list_num; i++){
+    if(strcmp(name, pack_list[i].path)==0){found = i; break;}
+  }
+  if(found<0){return;}
+  for(int i=0; i<packnum; i++){
+    if(strcmp(pack[i].name, name)==0){
+      //printf("pack_import: dup[%i] = [%s]\n", i, filename);
+      return;
+    }
+  }
+  //printf("pack import [%s]\n", filename);
   pack_t *p = pack_load(filename);
-  if(p == NULL)return;
+  if(p == NULL){fprintf(stderr, "pack_inport: [%s] wrong file format\n", filename); return;}
   if(packnum+1 >= packalloc){
-    //printf("realloc %i\n", packalloc + packalloc_dn);
     pack_t *prev = pack;
     pack = realloc(pack, sizeof(pack_t)*(packalloc + packalloc_dn));
     if(pack == NULL){
@@ -528,32 +573,15 @@ void pack_import(char *filename, void *data){
     packalloc += packalloc_dn;
   }
   memcpy(&(pack[packnum]), p, sizeof(pack_t));
+  pack_list[found].pack_idx = packnum;
   packnum++;
   free(p);
 }
-void packs_import(char *dirname){
-  dirfiles_read(dirname, ".kicad_mod", pack_import, NULL);
-  char **prev = pack_altname;
-  pack_altname = realloc(pack_altname, sizeof(char*)*packnum);
-  if(pack_altname == NULL){
-    fprintf(stderr, "Not enough memory\n");
-    fatalflag = 1;
-    free(prev);
+void packs_load(){
+  //printf("packs_load\n");
+  for(int i=0; i<pack_path_num; i++){
+    dirfiles_read(pack_path[i], ".kicad_mod", pack_load_callback, NULL);
   }
-  for(int i=0; i<packnum; i++)pack_altname[i] = strdup("");
-}
-void packs_show(){
-  if(pack == NULL)return;
-  for(int i=0; i<packnum; i++){
-    //printf("%i: [%s](%i)\n", i, pack[i].name, pack[i].pinn);
-    //pack_test(&pack[i]);
-  }
-}
-void packs_free(){
-  if(pack == NULL)return;
-  for(int i=0; i<packnum; i++){pack_free(&(pack[i]));}
-  free(pack);
-  pack = NULL; packnum = 0; packalloc = 0;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -715,7 +743,7 @@ void html_write_ui(FILE *pf){
   fprintf(pf, "<select id=\"mcuselected\" onchange=\"SelectMCU()\">\n");
   for(int i=0; i<mcun; i++){
     //fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[i].name, mcu[i].pack->name, mcu[i].name, mcu[i].pack->name);
-    fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[i].name, altname(i), mcu[i].name, altname(i));
+    fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[i].name, mcu[i].packname, mcu[i].name, mcu[i].packname);
   }
   fprintf(pf, "</select>\n\n<br>\n");
   for(int i=0; i<periphn; i++){
@@ -735,7 +763,7 @@ void html_write_ui(FILE *pf){
 void html_write_table(FILE *pf, int idx){
   mcu_t *m = &(mcu[idx]);
   if(m->per == NULL)return;
-  fprintf(pf, "<table name=\"%s.%s\" onmouseleave=\"table_onmouse(-1);\" hidden>\n", m->name, altname(idx));
+  fprintf(pf, "<table name=\"%s.%s\" onmouseleave=\"table_onmouse(-1);\" hidden>\n", m->name, m->packname);
   fprintf(pf, "  <thead>\n    <tr>\n");
   
   fprintf(pf, "      <th><div>Pin</div></th>\n");
@@ -806,7 +834,7 @@ void html_write_drawfuncs(FILE *pf, float size){
   fprintf(pf, "function package_draw(){\n"
               "  const funcs = [\n");
   for(int i=0; i<mcun; i++){
-    fprintf(pf, "    [\"%s.%s\", package_draw_%s_%s],\n", mcu[i].name, altname(i), mcu[i].name, altname(i));
+    fprintf(pf, "    [\"%s.%s\", package_draw_%s_%s],\n", mcu[i].name, mcu[i].packname, mcu[i].name, mcu[i].packname);
   }
   fprintf(pf, "  ];\n"
               "  const canvas = document.getElementById(\"canvas\");\n"
@@ -839,7 +867,7 @@ void html_write_drawfuncs(FILE *pf, float size){
               "}\n"
               "\n");
   for(int i=0; i<mcun; i++){
-    fprintf(pf, "function package_draw_%s_%s(ctx, tbl, x, y, scale){\n", mcu[i].name, altname(i));
+    fprintf(pf, "function package_draw_%s_%s(ctx, tbl, x, y, scale){\n", mcu[i].name, mcu[i].packname);
     pack_html_export(mcu[i].pack, pf);
     fprintf(pf, "}\n");
   }
@@ -1064,7 +1092,7 @@ int main(int argc, char **argv){
     if(StrEq(argv[i], "--config=")){
       //configfile = argv[i] + sizeof("--config=") - 1;
     }else if(StrEq(argv[i], "--packages=")){
-      packs_import(argv[i] + sizeof("--packages=") - 1);
+      pack_path_append(argv[i] + sizeof("--packages=") - 1);
     }else{
       if(inputfile == NULL){
         inputfile = argv[i];
@@ -1073,16 +1101,14 @@ int main(int argc, char **argv){
       }
     }
   }
-  for(int i=0; i<sizeof(pack_defaultpath)/sizeof(pack_defaultpath[0]); i++){
-    packs_import((char*)pack_defaultpath[i]);
-  }
-  packs_show();
+
   if(inputfile == NULL){
     help(argv[0]); return 0;
   }
   if(outputfile == NULL){outputfile = make_out_name(inputfile); alloc_out = 1;}
   
   FILE *pf = fopen(inputfile, "r");
+  if(pf == NULL){fprintf(stderr, "Can not open input file [%s]\n", inputfile); goto destroy_all;}
   char buf[4096];
   while( fgets(buf, sizeof(buf), pf) != NULL ){
     linenum++;
@@ -1096,10 +1122,12 @@ int main(int argc, char **argv){
     //printf("Unknown: [%s]\n", buf);
   }
   
+  pack_path_append("packages_KiCad");
+  packs_load();
   mcu_resolv_deps();
   test_deps();
   
-  if(fatalflag)goto destroy_all;
+  if(fatalflag){fclose(pf); fprintf(stderr, "Fatal error\n"); goto destroy_all;}
   
   rewind(pf);
   linenum = 0;
@@ -1124,8 +1152,9 @@ int main(int argc, char **argv){
 destroy_all:
   periph_free();
   mcu_free();
-  //package_free();
-  //packs_free();
+  package_free();
+  packs_free();
+  pack_path_free();
   
   if(alloc_out){free(outputfile);}
   return 0;

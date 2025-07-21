@@ -20,6 +20,8 @@ typedef struct{
 typedef enum{
   pg_line,
   pg_arc,
+  pg_rect,
+  pg_circ,
 }pg_type_t;
 
 typedef struct{
@@ -27,6 +29,8 @@ typedef struct{
   union{
     pg_line_t line;
     pg_arc_t arc;
+    pg_line_t rect;
+    pg_line_t circ;
   };
 }pack_graph_t;
 
@@ -35,8 +39,9 @@ typedef struct{
   pack_graph_t *graph;
   size_t graphn;
 }intr_t;
-
 #define pintr ((intr_t*)(p->intr))
+
+char pack_show_unknown = 0;
 
 void skip_chank(FILE *pf, int nesting){
   int ch;
@@ -111,6 +116,19 @@ void pack_graph_size(pack_t *p, float *x, float *y, float *w, float *h){
         setminmax(ymin, ymax, pintr->graph[i].arc.y1);
         setminmax(ymin, ymax, pintr->graph[i].arc.y2);
         setminmax(ymin, ymax, pintr->graph[i].arc.y3);
+        break;
+      case pg_rect:
+        setminmax(xmin, xmax, pintr->graph[i].rect.x1);
+        setminmax(xmin, xmax, pintr->graph[i].rect.x2);
+        setminmax(ymin, ymax, pintr->graph[i].rect.y1);
+        setminmax(ymin, ymax, pintr->graph[i].rect.y2);
+        break;
+      case pg_circ:
+        setminmax(xmin, xmax, pintr->graph[i].circ.x1);
+        setminmax(xmin, xmax, pintr->graph[i].circ.x2);
+        setminmax(ymin, ymax, pintr->graph[i].circ.y1);
+        setminmax(ymin, ymax, pintr->graph[i].circ.y2);
+        break;
     }
   }
   for(int i=0; i<p->pinn; i++){
@@ -170,27 +188,42 @@ void trim_quotes(char *str){
   }
 }
 
+char* pack_search_name(char *filename){
+  static char name[4096] = "";
+  FILE *pf = fopen(filename, "r");
+  if(pf == NULL){fprintf(stderr, "pack_KiCad.pack_load: file [%s] not found\n", filename); return NULL;}
+  int res = fscanf(pf, " (%s", name);
+  if(res <= 0)return name;
+  if((strcmp(name, "footprint")!=0)&&(strcmp(name, "module")!=0)){
+    fprintf(stderr, "pack_KiCad.pack_load: wrong file format [%s]\n", filename);
+    name[0] = 0;
+    return name;
+  }
+  fscanf(pf, " %s", name);
+  trim_quotes(name);
+  return name;
+}
+
 pack_t* pack_load(char *filename){
   FILE *pf = fopen(filename, "r");
   if(pf == NULL){fprintf(stderr, "pack_KiCad.pack_load: file [%s] not found\n", filename); return NULL;}
-  
-  pack_t *p = malloc(sizeof(pack_t));
-  if(p == NULL)return NULL;
-  p->name = NULL;
-  p->descr = NULL;
-  p->pin = NULL;
-  p->pinn = 0;
-  p->intr = NULL;
   
   char name[1000];
   fscanf(pf, " (%s", name);
   if((strcmp(name, "footprint")!=0)&&(strcmp(name, "module")!=0)){
     fprintf(stderr, "pack_KiCad.pack_load: wrong file format [%s]\n", filename);
-    free(p);
+    fclose(pf);
     return NULL;
   }
   fscanf(pf, " %s", name);
   trim_quotes(name);
+  
+  pack_t *p = malloc(sizeof(pack_t));
+  if(p == NULL){fprintf(stderr, "pack_KiCad.pack_load: not enougn memory\n"); fclose(pf); return NULL;}
+  p->descr = NULL;
+  p->pin = NULL;
+  p->pinn = 0;
+  p->intr = NULL;
   p->name = strdup(name);
   
   int nst = 1;
@@ -199,15 +232,16 @@ pack_t* pack_load(char *filename){
   do{
     nst = next_chank(pf, name, nst);
     if(nst <= 0)break;
-    if((strcmp(name, "fp_line")==0)||(strcmp(name, "fp_arc")==0)){
+    if((strcmp(name, "fp_line")==0)||(strcmp(name, "fp_arc")==0)||(strcmp(name, "fp_rect")==0)||(strcmp(name, "fp_circle")==0)){
       graphn++;
     }else if(strcmp(name, "pad")==0){
       p->pinn++;
-      //printf("pad\n");
-    }else if((strcmp(name, "version")==0)||(strcmp(name, "generator")==0)||(strcmp(name, "layer")==0)||(strcmp(name, "tedit")==0)||(strcmp(name, "descr")==0)||(strcmp(name, "tags")==0)||(strcmp(name, "attr")==0)||(strcmp(name, "fp_text")==0)||(strcmp(name, "model")==0)){
-      //ignore
-    }else{
-      printf("unknown chank [%s]\n", name);
+    }else if(pack_show_unknown){
+      if((strcmp(name, "version")==0)||(strcmp(name, "generator")==0)||(strcmp(name, "layer")==0)||(strcmp(name, "tedit")==0)||(strcmp(name, "descr")==0)||(strcmp(name, "tags")==0)||(strcmp(name, "attr")==0)||(strcmp(name, "fp_text")==0)||(strcmp(name, "model")==0)||(strcmp(name, "zone")==0)||(strncmp(name, "solder_",sizeof("solder_")-1)==0)||(strcmp(name, "fp_poly")==0)){
+        //ignore
+      }else{
+        printf("[%s] unknown chank [%s]\n", filename, name);
+      }
     }
     skip_chank(pf, 1);
     nst--;
@@ -255,6 +289,20 @@ pack_t* pack_load(char *filename){
       fscanf(pf, "%f%f", &(pintr->graph[gr].arc.x3), &(pintr->graph[gr].arc.y3));
       find_chank(pf, NULL);
       pintr->graph[gr].type = pg_arc; gr++;
+    }else if(strcmp(name, "fp_rect")==0){
+      find_chank(pf, "start");
+      fscanf(pf, "%f%f", &(pintr->graph[gr].rect.x1), &(pintr->graph[gr].rect.y1));
+      find_chank(pf, NULL); find_chank(pf, "end");
+      fscanf(pf, "%f%f", &(pintr->graph[gr].rect.x2), &(pintr->graph[gr].rect.y2));
+      find_chank(pf, NULL);
+      pintr->graph[gr].type = pg_rect; gr++;
+    }else if(strcmp(name, "fp_circle")==0){
+      find_chank(pf, "start");
+      fscanf(pf, "%f%f", &(pintr->graph[gr].circ.x1), &(pintr->graph[gr].circ.y1));
+      find_chank(pf, NULL); find_chank(pf, "end");
+      fscanf(pf, "%f%f", &(pintr->graph[gr].circ.x2), &(pintr->graph[gr].circ.y2));
+      find_chank(pf, NULL);
+      pintr->graph[gr].type = pg_circ; gr++;
     }else if(strcmp(name, "pad")==0){
       fscanf(pf, " %s", p->pin[pin].name);
       trim_quotes(p->pin[pin].name);
@@ -278,10 +326,8 @@ pack_t* pack_load(char *filename){
       //p->pin[pin].w *= 1.5; p->pin[pin].h *= 1.5;
       find_chank(pf, NULL);
       pin++;
-    }else if((strcmp(name, "version")==0)||(strcmp(name, "generator")==0)||(strcmp(name, "layer")==0)||(strcmp(name, "tedit")==0)||(strcmp(name, "descr")==0)||(strcmp(name, "tags")==0)||(strcmp(name, "attr")==0)||(strcmp(name, "fp_text")==0)||(strcmp(name, "model")==0)){
-      //ignore
     }else{
-      printf("unknown chank [%s]\n", name);
+      //ignore
     }
     skip_chank(pf, 1);
     nst--;
@@ -321,6 +367,8 @@ void pack_test(pack_t *p){
     switch(pintr->graph[i].type){
       case pg_line: printf("%i: line(%f,%f...%f,%f)\n", i, pintr->graph[i].line.x1, pintr->graph[i].line.y1, pintr->graph[i].line.x2, pintr->graph[i].line.y2); break;
       case pg_arc: printf("%i: arc(%f,%f %f,%f, %f,%f)\n", i, pintr->graph[i].arc.x1, pintr->graph[i].arc.y1, pintr->graph[i].arc.x2, pintr->graph[i].arc.y2, pintr->graph[i].arc.x3, pintr->graph[i].arc.y3); break;
+      case pg_rect: printf("%i: rect(%f,%f...%f,%f)\n", i, pintr->graph[i].rect.x1, pintr->graph[i].rect.y1, pintr->graph[i].rect.x2, pintr->graph[i].rect.y2); break;
+      case pg_circ: printf("%i: rect(%f,%f...%f,%f)\n", i, pintr->graph[i].circ.x1, pintr->graph[i].circ.y1, pintr->graph[i].circ.x2, pintr->graph[i].circ.y2); break;
     }
   }
 }
@@ -459,6 +507,10 @@ void pack_html_export(pack_t *p, FILE *pf){
       char dir = 0;
       fprintf(pf, "  ctx.moveTo(x + %f*scale, x + %f*scale);", X, Y);
       fprintf(pf, " ctx.arc(x+%f*scale, y+%f*scale, %f*scale, %f, %f, %s); //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
+    }else if(pintr->graph[i].type == pg_rect){
+      fprintf(pf, "  ctx.fillRect(x + %f*scale, x + %f*scale, %f*scale, %f*scale); //%i", pintr->graph[i].rect.x1, pintr->graph[i].line.y1, pintr->graph[i].line.x2 - pintr->graph[i].rect.x1, pintr->graph[i].rect.y2 - pintr->graph[i].rect.y1, i);
+    }else if(pintr->graph[i].type == pg_circ){
+      fprintf(pf, "  ctx.ellipse(x + %f*scale, x + %f*scale, %f*scale, %f*scale, 0,0,Math.PI*2); ctx.fill(); //%i", (pintr->graph[i].circ.x1+pintr->graph[i].circ.x2)/2, (pintr->graph[i].circ.y1+pintr->graph[i].circ.y2)/2, (pintr->graph[i].circ.x2-pintr->graph[i].circ.x1)/2, (pintr->graph[i].circ.y2-pintr->graph[i].circ.y1)/2, i);
     }
   }
   fprintf(pf, "  ctx.stroke();\n");
