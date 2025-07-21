@@ -5,7 +5,6 @@
 #include <ctype.h>
 #include "pack_KiCad.h"
 
-const char *pack_defaultpath[] = {"./"};
 char **pack_path = NULL;
 size_t pack_path_num = 0;
 
@@ -23,6 +22,7 @@ void pack_path_free(){
 
 
 int linenum = 0;
+int packs_maxpins = 0;
 char fatalflag = 0;
 
 void help(char *name){
@@ -42,7 +42,7 @@ char* make_out_name(char *iname){
 
 typedef void (*dirfiles_func_t)(char *filename, void *data);
 void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void *userdata);
-
+void pack_add(pack_t *p);
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////// Parse input file ///////////////////////////////////////////////////////////////////////////////
@@ -204,6 +204,16 @@ void mcu_resolv_deps(){
   for(int i=0; i<mcun; i++){
     if(mcu[i].packname == NULL)continue;
     int idx = pack_search(mcu[i].packname);
+    
+    if(idx < 0){
+      fprintf(stderr, "MCU [%s]: package [%s] not found\n", mcu[i].name, mcu[i].packname);
+      pack_t *p = pack_dummy(mcu[i].packname, packs_maxpins);
+      idx = packnum;
+      pack_add(p);
+      mcu[i].pack = &(pack[idx]);
+      free(p);
+    }
+    
     if(idx >= 0){
       mcu[i].pack = &(pack[idx]);
       int np = mcu[i].pack->pinn;
@@ -217,8 +227,6 @@ void mcu_resolv_deps(){
         mcu[i].per[j].num[0] = 0;
         mcu[i].per[j].funcs = NULL;
       }
-    }else{
-      fprintf(stderr, "MCU [%s]: package [%s] not found\n", mcu[i].name, mcu[i].packname);
     }
   }
 }
@@ -238,6 +246,19 @@ int str_to_pinnum(char *s, int mcunum){
     if(strcmp(s, p->pin[i].name)==0)return i;
   }
   return -1;
+}
+
+int packdummy_add_pin(pack_t *p, char *s){
+  int idx = -1;
+  for(int i=0; i<p->pinn; i++){
+    if(p->pin[i].name[0] == 0){
+      idx = i;
+      break;
+    }
+  }
+  if(idx < 0)return -1;
+  strncpy(p->pin[idx].name, s, 20);
+  return idx;
 }
 
 void parse_periph(char *buf){
@@ -438,17 +459,23 @@ void content_parse(char *capt, FILE *pf){
         if(mcu_idx_tbl[pos + j]){
           pin = str_to_pinnum(str, j);
           if((pin < 0) || (pin>=mcu[j].pack->pinn)){
-            fprintf(stderr, "MCU [%s.%s]: pin [%s] not found\n", mcu[j].name, mcu[j].pack->name, str);
-          }else{
-            strncpy(mcu[j].per[pin].name, name, 20);
-            strncpy(mcu[j].per[pin].num, str, 10);
-            if(mcu[j].per[pin].funcs == NULL){
-              mcu[j].per[pin].funcs = strdup(per);
+            if((mcu[j].pack->descr!=NULL) && (strcmp(mcu[j].pack->descr, "Dummy")==0)){
+              pin = packdummy_add_pin(mcu[j].pack, str);
+              if(pin < 0)continue;
             }else{
-              mcu[j].per[pin].funcs = realloc(mcu[j].per[pin].funcs, strlen(mcu[j].per[pin].funcs)+strlen(per)+2);
-              strcat(mcu[j].per[pin].funcs, per);
+              fprintf(stderr, "MCU [%s.%s]: pin [%s] not found\n", mcu[j].name, mcu[j].pack->name, str);
+              continue;
             }
           }
+          strncpy(mcu[j].per[pin].name, name, 20);
+          strncpy(mcu[j].per[pin].num, str, 10);
+          if(mcu[j].per[pin].funcs == NULL){
+            mcu[j].per[pin].funcs = strdup(per);
+          }else{
+            mcu[j].per[pin].funcs = realloc(mcu[j].per[pin].funcs, strlen(mcu[j].per[pin].funcs)+strlen(per)+2);
+            strcat(mcu[j].per[pin].funcs, per);
+          }
+
         }
       }
     }
@@ -542,6 +569,22 @@ void packs_free(){
   pack = NULL; packnum = 0; packalloc = 0;
 }
 
+void pack_add(pack_t *p){
+  if(packnum+1 >= packalloc){
+    pack_t *prev = pack;
+    pack = realloc(pack, sizeof(pack_t)*(packalloc + packalloc_dn));
+    if(pack == NULL){
+      fprintf(stderr, "Not enough memory\n");
+      fatalflag = 1;
+      for(int i=0; i<packnum; i++)pack_free(&prev[i]);
+      free(prev);
+      return;
+    }
+    packalloc += packalloc_dn;
+  }
+  memcpy(&(pack[packnum]), p, sizeof(pack_t));
+  packnum++;
+}
 
 void pack_load_callback(char *filename, void *data){
   char *name = pack_search_name(filename);
@@ -560,21 +603,8 @@ void pack_load_callback(char *filename, void *data){
   //printf("pack import [%s]\n", filename);
   pack_t *p = pack_load(filename);
   if(p == NULL){fprintf(stderr, "pack_inport: [%s] wrong file format\n", filename); return;}
-  if(packnum+1 >= packalloc){
-    pack_t *prev = pack;
-    pack = realloc(pack, sizeof(pack_t)*(packalloc + packalloc_dn));
-    if(pack == NULL){
-      fprintf(stderr, "Not enough memory\n");
-      fatalflag = 1;
-      for(int i=0; i<packnum; i++)pack_free(&prev[i]);
-      free(prev);
-      return;
-    }
-    packalloc += packalloc_dn;
-  }
-  memcpy(&(pack[packnum]), p, sizeof(pack_t));
-  pack_list[found].pack_idx = packnum;
-  packnum++;
+  pack_add(p);
+  pack_list[found].pack_idx = packnum-1;
   free(p);
 }
 void packs_load(){
@@ -866,6 +896,7 @@ void html_write_drawfuncs(FILE *pf, float size){
               "  package_draw();\n"
               "}\n"
               "\n");
+  pack_html_common(pf);
   for(int i=0; i<mcun; i++){
     fprintf(pf, "function package_draw_%s_%s(ctx, tbl, x, y, scale){\n", mcu[i].name, mcu[i].packname);
     pack_html_export(mcu[i].pack, pf);
@@ -1118,7 +1149,13 @@ int main(int argc, char **argv){
     if(StrEq(ch, "Packages:")){packages_parse(buf + sizeof("Packages:")-1); continue;}
     if(StrEq(ch, "MCU:")){mcu_parse(buf + sizeof("MCU:")-1); continue;}
     if(StrEq(ch, "Periph:")){parse_periph(buf + sizeof("Periph:")-1); continue;}
-    if(StrEq(ch, "Content:")){content_skip(buf + sizeof("Content:")-1, pf); continue;}
+    if(StrEq(ch, "Content:")){
+      int ln = linenum;
+      content_skip(buf + sizeof("Content:")-1, pf);
+      ln = linenum - ln - 2;
+      if(packs_maxpins < ln)packs_maxpins = ln;
+      continue;
+    }
     //printf("Unknown: [%s]\n", buf);
   }
   

@@ -7,6 +7,7 @@ Periph: GPIO[P]; 5VT[5]; TIM; Analog[A]; UART; SPI; I2C; CAN; USB; Ethernet[ETH]
 Content:
 | Name    | [TSSOP20] | [QFN28] | CH32V305CCT6 | CH32V303CBT6 | [LQFP64M] | [QFN68] | [LQFP100] | Periph |
 |---------|-----------|---------|--------------|--------------|-----------|---------|-----------|--------|
+|   GND   |     -    |    29    |        -     |      -       |    -      |     -   |     -     | SRV.F.GND | 
 |   GND   |    18    |    20   |        -     |      -       |    -      |    69   |     -     | SRV.F.GND |
 |   PE2   |    -    |     -   |        -     |      -       |     -     |      -  |     1     | P.PE2; 5.+; TIM.[10_BKIN]2; TIM.[10_BKIN]3; FSMC.A23 |
 |   PE3   |    -   |     -   |        -     |      -       |     -     |     -   |     2     | P.PE3; 5.+; TIM.[10.1N]2; TIM.[10.1N]3; FSMC.A19 |

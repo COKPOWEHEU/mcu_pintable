@@ -20,10 +20,22 @@ char* pack_search_name(char *filename);
 pack_t* pack_load(char *filename);
 void pack_free(pack_t *p);
 void pack_test(pack_t *p);
+void pack_html_common(FILE *pf);
 void pack_html_export(pack_t *p, FILE *pf);
+
+pack_t* pack_dummy(char *name, int npins);
 
 #endif
 #if 0
+
+typedef struct{
+  char *name;
+  char *path;
+}pack_list_t;
+pack_list_t *pack_list = NULL;
+size_t pack_list_num = 0;
+size_t pack_list_alloc = 0;
+const size_t pack_list_dn = 5;
 
 pack_t *pack = NULL;
 char **pack_altname = NULL;

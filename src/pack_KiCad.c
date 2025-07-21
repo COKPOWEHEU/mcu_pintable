@@ -197,9 +197,11 @@ char* pack_search_name(char *filename){
   if((strcmp(name, "footprint")!=0)&&(strcmp(name, "module")!=0)){
     fprintf(stderr, "pack_KiCad.pack_load: wrong file format [%s]\n", filename);
     name[0] = 0;
+    fclose(pf);
     return name;
   }
   fscanf(pf, " %s", name);
+  fclose(pf);
   trim_quotes(name);
   return name;
 }
@@ -341,6 +343,29 @@ pack_t* pack_load(char *filename){
   return p;
 }
 
+pack_t* pack_dummy(char *name, int npins){
+  pack_t *p = malloc(sizeof(pack_t));
+  if(p == NULL){fprintf(stderr, "pack_KiCad.pack_load: not enougn memory\n"); return NULL;}
+  p->name = strdup(name);
+  //p->name = strdup("Dummy");
+  p->descr = strdup("Dummy");
+  
+  p->intr = malloc(sizeof(intr_t));
+  pintr->graph = NULL;
+  pintr->graphn = 0;
+  
+  p->pinn = npins;
+  p->pin = malloc(sizeof(pack_pin_t)*npins);
+  pintr->pinshape = malloc(sizeof(pack_pinsh_t)*npins);
+  for(int i=0; i<npins; i++){
+    p->pin[i].name[0] = 0;
+    p->pin[i].x = p->pin[i].y = 1;
+    p->pin[i].w = p->pin[i].h = 1;
+    pintr->pinshape[i] = pin_unknown;
+  }
+  return p;
+}
+
 void pack_free(pack_t *p){
   if(p == NULL)return;
   if(p->name){free(p->name); p->name = NULL;}
@@ -373,10 +398,9 @@ void pack_test(pack_t *p){
   }
 }
 
-// draw_mcu(ctx, tbl, x, y, scale)
-void pack_html_export(pack_t *p, FILE *pf){
-  if(p == NULL)return;
-  fprintf(pf, "  const patternCanvas = document.createElement(\"canvas\");\n"
+void pack_html_common(FILE *pf){
+  fprintf(pf, "function pack_html_draw(ctx, tbl, x, y, scale, pins, pin_names, graph){\n"
+              "  const patternCanvas = document.createElement(\"canvas\");\n"
               "  const patternContext = patternCanvas.getContext(\"2d\");\n"
               "  patternCanvas.width = 10;\n"
               "  patternCanvas.height = 10;\n"
@@ -386,8 +410,77 @@ void pack_html_export(pack_t *p, FILE *pf){
               "  patternContext.fillRect(0, 0, 5, 5);\n"
               "  const pattern = ctx.createPattern(patternCanvas, \"repeat\");\n"
               "  ctx.fillStyle =\"rgb(200 200 200)\";\n"
+              "\n"
+              "//draw pads\n"
+              "  for(let i=0; i<pins.length; i++){\n"
+              "    let col = \"rgb(200 200 200)\";\n"
+              "    let idx = pin_names[i][4];\n"
+              "    if((idx >= 0)&&(idx < tbl.length)){\n"
+              "      if(tbl[idx].bgcolor != \"\"){\n"
+              "        col = tbl[idx].bgColor;\n"
+              "      }\n"
+              "    }\n"
+              "    ctx.fillStyle = col;\n"
+              "    if(table_selected == i){\n"
+              "      ctx.fillStyle = pattern;\n"
+              "    }\n"
+              "    if(pins[i][0] == 'r'){\n"
+              "      ctx.fillRect(x+pins[i][1]*scale, y+pins[i][2]*scale, pins[i][3]*scale, pins[i][4]*scale);\n"
+              "    }else{\n"
+              "      ctx.beginPath();\n"
+              "      ctx.ellipse(x+pins[i][1]*scale, y+pins[i][2]*scale, pins[i][3]*scale, pins[i][4]*scale, 0, 0, Math.PI*2);\n"
+              "      ctx.fill();\n"
+              "    }\n"
+              "    ctx.fillStyle = \"rgb(200 200 200)\";\n"
+              "  }\n"
+              "\n"
+              "//draw pads text\n"
+              "  ctx.fillStyle =\"rgb(0 0 0)\";\n"
+              "  ctx.textBaseline = \"middle\";\n"
+              "  ctx.textAlign = \"center\";\n"
+              "  ctx.font = scale*0.040064 + \"px serif\";\n"
+              "\n"
+              "  let colnum = -1;\n"
+              "  let hdr = tbl[0].parentElement.parentElement.children[0].children[0].children;\n"
+              "  for(let i=0; i<hdr.length; i++){\n"
+              "    if(hdr[i].className == \"tbl_pinname\"){colnum = i; break;}\n"
+              "  }\n"
+              "  for(let i=0; i<pin_names.length; i++){\n"
+              "    let name = pin_names[i][3];\n"
+              "    let idx = pin_names[i][4];\n"
+              "    if((colnum >= 0) && (idx >= 0) && (idx < tbl.length)){\n"
+              "      let val = tbl[idx].children[colnum].children[0].value;\n"
+              "      if(val != \"\")name = val;\n"
+              "    }\n"
+              "    if(pin_names[i][0] == 'h'){\n"
+              "      ctx.strokeText(name, x + pin_names[i][1]*scale, y + pin_names[i][2]*scale);\n"
+              "    }else{\n"
+              "      ctx.save(); ctx.translate(x + pin_names[i][1]*scale, y + pin_names[i][2]*scale);\n"
+              "      ctx.rotate(-Math.PI/2); ctx.strokeText(name, 0, 0);\n"
+              "      ctx.restore();\n"
+              "    }\n"
+              "  }\n"
+              "\n"
+              "//draw graphics\n"
+              "  ctx.beginPath();\n"
+              "  for(let i=0; i<graph.length; i++){\n"
+              "    if(graph[i][0] == 'l'){\n"
+              "      ctx.moveTo(x + graph[i][1]*scale, x + graph[i][2]*scale); ctx.lineTo(x + graph[i][3]*scale, y + graph[i][4]*scale);\n"
+              "    }else if(graph[i][0] == 'a'){\n"
+              "      ctx.moveTo(x + graph[i][1]*scale, x + graph[i][2]*scale); ctx.arc(x+graph[i][1]*scale, y+graph[i][2]*scale, graph[i][3]*scale, graph[i][4], graph[i][5], graph[i][6]);\n"
+              "    }else if(graph[i][0] == 'r'){\n"
+              "      ctx.fillRect(x + graph[i][1]*scale, x + graph[i][2]*scale, graph[i][3]*scale, graph[i][4]*scale);\n"
+              "    }else if(graph[i][0] == 'c'){\n"
+              "      ctx.ellipse(x + graph[i][1]*scale, y + graph[i][2]*scale, graph[i][3]*scale, graph[i][4]*scale, 0,0,Math.PI*2); ctx.fill();\n"
+              "    }\n"
+              "  }\n"
+              "  ctx.stroke();\n"
+              "}\n"
               "\n");
-  
+}
+void pack_html_export(pack_t *p, FILE *pf){
+  if(p == NULL)return;
+  if( (p->descr!=NULL)&&(strcmp(p->descr, "Dummy")==0) )return;
   //Рисуем контактные площадки
   fprintf(pf, "  const pins = [\n");
   float sz = 1e20;
@@ -419,66 +512,14 @@ void pack_html_export(pack_t *p, FILE *pf){
     if(p->pin[i].name[0] != 0)tblnum++; else pnum = -1;
     fprintf(pf, "    ['%c', %f, %f, \"%s\", %i], //%i\n", orient, x, y, p->pin[i].name, pnum, i);
   }
-  fprintf(pf, "  ];\n"
-              "\n"
-              "  for(let i=0; i<pins.length; i++){\n"
-              "    let col = \"rgb(200 200 200)\";\n"
-              "    let idx = pin_names[i][4];\n"
-              "    if((idx >= 0)&&(idx < tbl.length)){\n"
-              "      if(tbl[idx].bgcolor != \"\"){\n"
-              "        col = tbl[idx].bgColor;\n"
-              "      }\n"
-              "    }\n"
-              "    ctx.fillStyle = col;\n"
-              "    if(table_selected == i){\n"
-              "      ctx.fillStyle = pattern;\n"
-              "    }\n"
-              "    if(pins[i][0] == 'r'){\n"
-              "      ctx.fillRect(x+pins[i][1]*scale, y+pins[i][2]*scale, pins[i][3]*scale, pins[i][4]*scale);\n"
-              "    }else{\n"
-              "      ctx.beginPath();\n"
-              "      ctx.ellipse(x+pins[i][1]*scale, y+pins[i][2]*scale, pins[i][3]*scale, pins[i][4]*scale, 0, 0, Math.PI*2);\n"
-              "      ctx.fill();\n"
-              "    }\n"
-              "    ctx.fillStyle = \"rgb(200 200 200)\";\n"
-              "  }\n"
-        );
+  fprintf(pf, "  ];\n");
   
-  //Рисуем текст на площадках
-  fprintf(pf, "  ctx.fillStyle =\"rgb(0 0 0)\";\n"
-              "  ctx.textBaseline = \"middle\";\n"
-              "  ctx.textAlign = \"center\";\n");
-  fprintf(pf, "  ctx.font = scale*%f + \"px serif\";\n", sz);
-  
-  fprintf(pf, "\n"
-             "  let colnum = -1;\n"
-             "  let hdr = tbl[0].parentElement.parentElement.children[0].children[0].children;\n"
-             "  for(let i=0; i<hdr.length; i++){\n"
-             "    if(hdr[i].className == \"tbl_pinname\"){colnum = i; break;}\n"
-             "  }\n"
-             "  for(let i=0; i<pin_names.length; i++){\n"
-             "    let name = pin_names[i][3];\n"
-             "    let idx = pin_names[i][4];\n"
-             "    if((colnum >= 0) && (idx >= 0) && (idx < tbl.length)){\n"
-             "      let val = tbl[idx].children[colnum].children[0].value;\n"
-             "      if(val != \"\")name = val;\n"
-             "    }\n"
-             "    if(pin_names[i][0] == 'h'){\n"
-             "      ctx.strokeText(name, x + pin_names[i][1]*scale, y + pin_names[i][2]*scale);\n"
-             "    }else{\n"
-             "      ctx.save(); ctx.translate(x + pin_names[i][1]*scale, y + pin_names[i][2]*scale);\n"
-             "      ctx.rotate(-Math.PI/2); ctx.strokeText(name, 0, 0);\n"
-             "      ctx.restore();\n"
-             "    }\n"
-             "  }\n"
-  );
-  
-  //Рисуем всю прочую графику
-  fprintf(pf, "  ctx.beginPath();\n");
+  fprintf(pf, "  const graph = [\n");
   for(int i=0; i<pintr->graphn; i++){
     if(pintr->graph[i].type == pg_line){
-      fprintf(pf, "  ctx.moveTo(x + %f*scale, x + %f*scale);", pintr->graph[i].line.x1, pintr->graph[i].line.y1);
-      fprintf(pf, " ctx.lineTo(x + %f*scale, y + %f*scale); //%i\n", pintr->graph[i].line.x2, pintr->graph[i].line.y2, i);
+      fprintf(pf, "    ['l', %f, %f, %f, %f], //%i\n", pintr->graph[i].line.x1, pintr->graph[i].line.y1, pintr->graph[i].line.x2, pintr->graph[i].line.y2, i);
+      //fprintf(pf, "  ctx.moveTo(x + %f*scale, x + %f*scale);", pintr->graph[i].line.x1, pintr->graph[i].line.y1);
+      //fprintf(pf, " ctx.lineTo(x + %f*scale, y + %f*scale); //%i\n", pintr->graph[i].line.x2, pintr->graph[i].line.y2, i);
     }else if(pintr->graph[i].type == pg_arc){
       float x1=pintr->graph[i].arc.x1;
       float x2=pintr->graph[i].arc.x2;
@@ -505,14 +546,20 @@ void pack_html_export(pack_t *p, FILE *pf){
       a2 = atan2f( y2-Y, x2-X );
       a3 = atan2f( y3-Y, x3-X );
       char dir = 0;
-      fprintf(pf, "  ctx.moveTo(x + %f*scale, x + %f*scale);", X, Y);
-      fprintf(pf, " ctx.arc(x+%f*scale, y+%f*scale, %f*scale, %f, %f, %s); //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
+      fprintf(pf, "    ['a', %f, %f, %f, %f, %f, %s], //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
+      //fprintf(pf, "  ctx.moveTo(x + %f*scale, x + %f*scale);", X, Y);
+      //fprintf(pf, " ctx.arc(x+%f*scale, y+%f*scale, %f*scale, %f, %f, %s); //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
     }else if(pintr->graph[i].type == pg_rect){
-      fprintf(pf, "  ctx.fillRect(x + %f*scale, x + %f*scale, %f*scale, %f*scale); //%i", pintr->graph[i].rect.x1, pintr->graph[i].line.y1, pintr->graph[i].line.x2 - pintr->graph[i].rect.x1, pintr->graph[i].rect.y2 - pintr->graph[i].rect.y1, i);
+      fprintf(pf, "    ['r', %f, %f, %f, %f], //%i\n", pintr->graph[i].rect.x1, pintr->graph[i].line.y1, pintr->graph[i].line.x2 - pintr->graph[i].rect.x1, pintr->graph[i].rect.y2 - pintr->graph[i].rect.y1, i);
+      //fprintf(pf, "  ctx.fillRect(x + %f*scale, x + %f*scale, %f*scale, %f*scale); //%i", pintr->graph[i].rect.x1, pintr->graph[i].line.y1, pintr->graph[i].line.x2 - pintr->graph[i].rect.x1, pintr->graph[i].rect.y2 - pintr->graph[i].rect.y1, i);
     }else if(pintr->graph[i].type == pg_circ){
-      fprintf(pf, "  ctx.ellipse(x + %f*scale, x + %f*scale, %f*scale, %f*scale, 0,0,Math.PI*2); ctx.fill(); //%i", (pintr->graph[i].circ.x1+pintr->graph[i].circ.x2)/2, (pintr->graph[i].circ.y1+pintr->graph[i].circ.y2)/2, (pintr->graph[i].circ.x2-pintr->graph[i].circ.x1)/2, (pintr->graph[i].circ.y2-pintr->graph[i].circ.y1)/2, i);
+      fprintf(pf, "    ['c', %f, %f, %f, %f], //%i\n", (pintr->graph[i].circ.x1+pintr->graph[i].circ.x2)/2, (pintr->graph[i].circ.y1+pintr->graph[i].circ.y2)/2, (pintr->graph[i].circ.x2-pintr->graph[i].circ.x1)/2, (pintr->graph[i].circ.y2-pintr->graph[i].circ.y1)/2, i);
+      //fprintf(pf, "  ctx.ellipse(x + %f*scale, x + %f*scale, %f*scale, %f*scale, 0,0,Math.PI*2); ctx.fill(); //%i", (pintr->graph[i].circ.x1+pintr->graph[i].circ.x2)/2, (pintr->graph[i].circ.y1+pintr->graph[i].circ.y2)/2, (pintr->graph[i].circ.x2-pintr->graph[i].circ.x1)/2, (pintr->graph[i].circ.y2-pintr->graph[i].circ.y1)/2, i);
     }
   }
-  fprintf(pf, "  ctx.stroke();\n");
+  fprintf(pf, "  ];\n");
   
+  fprintf(pf, "\n"
+              "  pack_html_draw(ctx, tbl, x,y,scale, pins, pin_names, graph);\n"
+              "");
 }
