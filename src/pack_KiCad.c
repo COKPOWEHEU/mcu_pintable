@@ -338,9 +338,23 @@ pack_t* pack_load(char *filename){
   
   fclose(pf);
   
-  //printf("Graph: %i\tpads: %i\n", pintr->graphn, p->pinn);
-  
   return p;
+}
+
+char pack_equal(pack_t *p1, pack_t *p2){
+  if((p1==NULL)||(p2==NULL))return 0;
+  if(p1->pinn != p2->pinn)return 0;
+  if(strcmp(p1->name, p2->name)!=0)return 0;
+  if( (p1->descr != NULL) && (p2->descr != NULL) ){
+    if(strcmp(p1->descr, p2->descr)!=0)return 0;
+  }else if( (p1->descr != NULL) || (p2->descr != NULL) ){
+    return 0;
+  }
+  if(((intr_t*)(p1->intr))->graphn != ((intr_t*)(p2->intr))->graphn)return 0;
+  for(int i=0; i<p1->pinn; i++){
+    if(strcmp(p1->pin[i].name, p2->pin[i].name)!=0)return 0;
+  }
+  return 1;
 }
 
 pack_t* pack_dummy(char *name, int npins){

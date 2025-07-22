@@ -81,6 +81,8 @@ int mcun = 0;
 int mcualloc = 0;
 const int mcualloc_dn = 5;
 
+int *mcu_baseperiph = NULL;
+
 typedef struct{
   char name[100];
   size_t nlen;
@@ -199,6 +201,7 @@ void mcu_free(){
   free(mcu);
   mcu = NULL; mcun = 0; mcualloc = 0;
 }
+
 void mcu_resolv_deps(){
   if(mcu == NULL)return;
   for(int i=0; i<mcun; i++){
@@ -226,6 +229,7 @@ void mcu_resolv_deps(){
     }
   }
 }
+
 void mcu_show(){
   if(mcu == NULL)return;
   for(int i=0; i<mcun; i++){
@@ -236,12 +240,42 @@ void mcu_show(){
     }
   }
 }
+
 int str_to_pinnum(char *s, int mcunum){
   pack_t *p = mcu[mcunum].pack;
   for(int i=0; i<p->pinn; i++){
     if(strcmp(s, p->pin[i].name)==0)return i;
   }
   return -1;
+}
+
+void mcu_baseperiph_init(){
+  if(mcu_baseperiph)free(mcu_baseperiph);
+  mcu_baseperiph = malloc(sizeof(int) * mcun);
+  for(int i=0; i<mcun; i++)mcu_baseperiph[i] = i;
+  for(int i=1; i<mcun; i++){
+    int eqnum;
+    for(int j=0; j<i; j++){
+      eqnum = -1;
+      if(!pack_equal(mcu[i].pack, mcu[j].pack))continue;
+      eqnum = j;
+      for(int k=0; k<mcu[i].pack->pinn; k++){
+        if(mcu[i].per[k].num[0] == 0)continue;
+        if(mcu[j].per[k].num[0] == 0)continue;
+        
+        if(strcmp(mcu[i].per[k].funcs, mcu[j].per[k].funcs) != 0){eqnum = -1; break;}
+      }
+      if(eqnum>=0){eqnum = j; break;}
+      
+    }
+    if((eqnum >= 0) && (eqnum != i)){
+      mcu_baseperiph[i] = eqnum;
+      //printf("dup [%s.%s] <- [%s.%s]\n", mcu[eqnum].name, mcu[eqnum].packname, mcu[i].name, mcu[i].packname);
+    }
+  }
+}
+void mcu_baseperiph_free(){
+  if(mcu_baseperiph){free(mcu_baseperiph); mcu_baseperiph = NULL;}
 }
 
 int packdummy_add_pin(pack_t *p, char *s){
@@ -439,40 +473,47 @@ void content_parse(char *capt, FILE *pf){
     per++;
     
     //find 'Name' field
-    const char delim[] = "| \t\n";
-    char *str, *name = strtok(buf, delim);
-    if(name == NULL){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcu_idx_tbl); return;}
-    
+    const char delim[] = "|";
+    const char delim2[] = "; \t";
+    char *str = strtok(buf, delim);
+    if(str == NULL){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcu_idx_tbl); return;}
+    char name[20];
+    sscanf(str, " %20s", name);
+
     //'MCU' fields
     for(int i=0; i<npacks; i++){
       str = strtok(NULL, delim);
       if(str == NULL){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcu_idx_tbl); return;}
-      if(str[0] == '-')continue;
-      int pin;
-      
-      size_t pos = i*mcun;
-      for(int j=0; j<mcun; j++){
-        if(mcu_idx_tbl[pos + j]){
-          pin = str_to_pinnum(str, j);
-          if((pin < 0) || (pin>=mcu[j].pack->pinn)){
-            if((mcu[j].pack->descr!=NULL) && (strcmp(mcu[j].pack->descr, "Dummy")==0)){
-              pin = packdummy_add_pin(mcu[j].pack, str);
-              if(pin < 0)continue;
-            }else{
-              fprintf(stderr, "MCU [%s.%s]: pin [%s] not found\n", mcu[j].name, mcu[j].pack->name, str);
-              continue;
+      char *saveptr;
+      char *pinname = strtok_r(str, delim2, &saveptr);
+      while(pinname != NULL){
+        if(pinname[0] == '-')break;
+        int pin;
+        size_t pos = i*mcun;
+        for(int j=0; j<mcun; j++){
+          if(mcu_idx_tbl[pos + j]){
+            pin = str_to_pinnum(pinname, j);
+            if((pin < 0) || (pin>=mcu[j].pack->pinn)){
+              if((mcu[j].pack->descr!=NULL) && (strcmp(mcu[j].pack->descr, "Dummy")==0)){
+                pin = packdummy_add_pin(mcu[j].pack, pinname);
+                if(pin < 0)continue;
+              }else{
+                fprintf(stderr, "MCU [%s.%s]: pin [%s] not found in package\n", mcu[j].name, mcu[j].packname, pinname);
+                continue;
+              }
             }
+            strncpy(mcu[j].per[pin].name, name, 20);
+            strncpy(mcu[j].per[pin].num, pinname, 10);
+            if(mcu[j].per[pin].funcs == NULL){
+              mcu[j].per[pin].funcs = strdup(per);
+            }else{
+              mcu[j].per[pin].funcs = realloc(mcu[j].per[pin].funcs, strlen(mcu[j].per[pin].funcs)+strlen(per)+2);
+              strcat(mcu[j].per[pin].funcs, per);
+            }
+        
           }
-          strncpy(mcu[j].per[pin].name, name, 20);
-          strncpy(mcu[j].per[pin].num, str, 10);
-          if(mcu[j].per[pin].funcs == NULL){
-            mcu[j].per[pin].funcs = strdup(per);
-          }else{
-            mcu[j].per[pin].funcs = realloc(mcu[j].per[pin].funcs, strlen(mcu[j].per[pin].funcs)+strlen(per)+2);
-            strcat(mcu[j].per[pin].funcs, per);
-          }
-
         }
+        pinname = strtok_r(NULL, delim2, &saveptr);
       }
     }
   }
@@ -496,6 +537,15 @@ void test_mcu_complete(){
     float p = pins;
     p = p*100 / pinn;
     printf("[%s.%s]:\t%i / %i = %.1f%%\n", mcu[i].name, mcu[i].packname, pins, pinn, p);
+    if(pins != pinn){
+      printf(" ");
+      for(int j=0; j<mcu[i].pack->pinn; j++){
+        if(mcu[i].pack->pin[j].name[0] == 0)continue;
+        if(mcu[i].per && mcu[i].per[j].funcs)continue;
+        printf(" %s", mcu[i].pack->pin[j].name);
+      }
+      printf("\n");
+    }
   }
 }
 
@@ -618,6 +668,9 @@ void packs_load(){
 
 void html_write_style(FILE *pf){
   fprintf(pf, 
+    "  body {\n"
+    "    overflow: hidden;\n"
+    "  }\n"
     "  table{\n"
     "    border-collapse: collapse; /* Убираем двойные линии между ячейками */ \n"
     "  }\n"
@@ -893,7 +946,8 @@ void html_write_scripts(FILE *pf){
 void html_write_ui(FILE *pf){
   fprintf(pf, "<select id=\"mcuselected\" onchange=\"SelectMCU()\">\n");
   for(int i=0; i<mcun; i++){
-    fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[i].name, mcu[i].packname, mcu[i].name, mcu[i].packname);
+    int idx = mcu_baseperiph[i];
+    fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[idx].name, mcu[idx].packname, mcu[i].name, mcu[i].packname);
   }
   fprintf(pf, "</select>\n\n<br>\n");
   for(int i=0; i<periphn; i++){
@@ -973,6 +1027,7 @@ void html_write_tables(FILE *pf){
   fprintf(pf, "<div id=\"col-1\">\n");
   fprintf(pf, "<div class=\"table_wrapper\">\n");
   for(int i=0; i<mcun; i++){
+    if(mcu_baseperiph[i] != i)continue;
     html_write_table(pf, i);
   }
   fprintf(pf, "</div>\n");
@@ -986,12 +1041,12 @@ void html_write_canvas(FILE *pf, float size){
 }
 
 void html_write_drawfuncs(FILE *pf, float size){
-  fprintf(pf, "var cnv_x=0, cnv_y=0, cnv_scale=1;\n"
+  fprintf(pf, "var cnv_x=1, cnv_y=1, cnv_scale=1;\n"
               "var cnv_dx=0, cnv_dy=0;\n"
               "\n"
               "function cnv_procdrag(event){\n"
               "  if( event.buttons & 4){\n"
-              "    cnv_x = 0; cnv_y = 0; cnv_scale = 1; package_draw();\n"
+              "    cnv_x = 1; cnv_y = 1; cnv_scale = 1; package_draw();\n"
               "  }\n"
               "  if( event.buttons & 1){\n"
               "    cnv_x += event.clientX-cnv_dx;\n"
@@ -1035,7 +1090,7 @@ void html_write_drawfuncs(FILE *pf, float size){
               "\n"
               "  let w = canvas.parentNode.clientWidth;\n"
               "  let h = canvas.parentNode.clientHeight;\n"
-              "  if(w < h)scale = w; else scale = h;\n"
+              "  if(w < h)scale = w-2; else scale = h-2;\n"
               "  canvas.width = w;\n"
               "  canvas.height = h;\n"
               "  scale *= cnv_scale;\n"
@@ -1346,6 +1401,7 @@ int main(int argc, char **argv){
   
   //package_show();
   //mcu_show();
+  mcu_baseperiph_init();
   test_mcu_complete();
   
   pf = fopen(outputfile, "w");
@@ -1359,6 +1415,7 @@ destroy_all:
   package_free();
   packs_free();
   pack_path_free();
+  mcu_baseperiph_free();
   
   if(alloc_out){free(outputfile);}
   return 0;

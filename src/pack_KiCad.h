@@ -24,6 +24,7 @@ void pack_test(pack_t *p);
 void pack_html_common(FILE *pf);
 void pack_html_export(pack_t *p, FILE *pf);
 
+char pack_equal(pack_t *p1, pack_t *p2);
 pack_t* pack_dummy(char *name, int npins);
 
 #endif
