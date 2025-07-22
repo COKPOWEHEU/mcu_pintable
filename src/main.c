@@ -675,33 +675,35 @@ void html_write_style(FILE *pf){
 
 void html_write_drawfuncs(FILE *pf, float size);
 void html_write_scripts(FILE *pf){
-  fprintf(pf, "function SelectPeriph(name){\n");
-  fprintf(pf, "  let mcu = document.getElementById(\"mcuselected\").value;\n");
-  fprintf(pf, "  let tbl = document.getElementsByName(mcu);\n");
-  fprintf(pf, "  let ctl = document.getElementsByName(\"Per.\"+name);\n");
-  fprintf(pf, "  let hdr = tbl[0].children[0].children[0];\n");
-  fprintf(pf, "  let idx = -1;\n");
-  fprintf(pf, "  let vis = \"\";\n");
-  fprintf(pf, "  for(let i=0; i<hdr.children.length; i++){\n");
-  fprintf(pf, "    if(hdr.children[i].innerText == name){idx = i; break;}\n");
-  fprintf(pf, "  }\n");
-  fprintf(pf, "  if(idx < 0)return;\n");
-  fprintf(pf, "  hid = ! ctl[0].checked;\n");
-  fprintf(pf, "  hdr.children[idx].hidden = hid;\n");
-  fprintf(pf, "  \n");
-  fprintf(pf, "  hdr = tbl[0].children[1];\n");
-  fprintf(pf, "  for(let i=0; i<hdr.children.length; i++){\n");
-  fprintf(pf, "    if(hdr.children[i].children.length < 2)continue;\n");
-  fprintf(pf, "    hdr.children[i].children[idx].hidden = hid;\n");
-  fprintf(pf, "  }\n");
-  fprintf(pf, "}\n\n");
+  fprintf(pf, "var controls = document.getElementsByClassName(\"controls\");\n");
+  fprintf(pf, "\n");
+  fprintf(pf, "function SelectPeriph(name){\n"
+              "  let mcu = document.getElementById(\"mcuselected\").value;\n"
+              "  let tbl = document.getElementsByName(mcu);\n"
+              "  let ctl = document.getElementsByName(name);\n"
+              "  let hdr = tbl[0].children[0].children[0];\n"
+              "  let idx = -1;\n"
+              "  let vis = \"\";\n"
+              "  for(let i=0; i<hdr.children.length; i++){\n"
+              "    if(hdr.children[i].innerText == name){idx = i; break;}\n"
+              "  }\n"
+              "  if(idx < 0)return;\n"
+              "  hid = ! ctl[0].checked;\n"
+              "  hdr.children[idx].hidden = hid;\n"
+              "  \n"
+              "  hdr = tbl[0].children[1];\n"
+              "  for(let i=0; i<hdr.children.length; i++){\n"
+              "    if(hdr.children[i].children.length < 2)continue;\n"
+              "    hdr.children[i].children[idx].hidden = hid;\n"
+              "  }\n"
+              "}\n\n");
 
   fprintf(pf, "function SrvVisible(){\n"
               "  let mcu = document.getElementById(\"mcuselected\").value;\n"
               "  let tbl = document.getElementsByName(mcu);\n"
               "  let ctl = document.getElementById(\"srvsel\").value;\n"
               "  let sh_F=true, sh_O=true;\n"
-              "  let check = document.getElementsByName(\"Per.Service\")[0];\n"
+              "  let check = document.getElementsByName(\"Service\")[0];\n"
               "  if(ctl == \"srv_show\"){sh_F=true; sh_O=true;}\n"
               "  if(ctl == \"srv_opt\"){sh_F=false; sh_O=true;}\n"
               "  if(ctl == \"srv_hide\"){sh_F=false; sh_O=false;}\n"
@@ -720,10 +722,10 @@ void html_write_scripts(FILE *pf){
               "}\n\n");
   
   fprintf(pf, "function SelectColor(linenum){\n"
-              "  var mcu = document.getElementById(\"mcuselected\").value;\n"
-              "  var tbl = document.getElementsByName(mcu);\n"
-              "  var lin = tbl[0].children[1];\n"
-              "  var col = -1;\n"
+              "  let mcu = document.getElementById(\"mcuselected\").value;\n"
+              "  let tbl = document.getElementsByName(mcu);\n"
+              "  let lin = tbl[0].children[1];\n"
+              "  let col = -1;\n"
               "  lin = tbl[0].children[1].children[linenum].getElementsByTagName(\"input\");\n"
               "  for(let i=0; i<lin.length; i++){\n"
               "    if(lin[i].name == \"usersel\"){\n"
@@ -738,29 +740,130 @@ void html_write_scripts(FILE *pf){
               "}\n\n");
   
   fprintf(pf, "function SelectMCU(){\n"
-              "  var mcu = document.getElementById(\"mcuselected\").value;\n"
-              "  var tables = document.getElementsByTagName(\"table\");\n"
+              "  let mcu = document.getElementById(\"mcuselected\").value;\n"
+              "  let tables = document.getElementsByTagName(\"table\");\n"
               "  for(let i=0; i<tables.length; i++){\n"
               "    tables[i].hidden = (tables[i].attributes.name.value != mcu);\n"
               "  }\n"
               "  Periph_Vis_update();\n"
               "  package_draw();\n"
+              "  tbl_col_update();\n"
               "}\n\n");
   
   fprintf(pf, "function Periph_Vis_update(){\n"
-              "  SrvVisible();\n");
-  for(int i=0; i<periphn; i++){
-    fprintf(pf, "  SelectPeriph('%s');\n", periph[i].name);
-  }
-  fprintf(pf, "  SelectPeriph('Other');\n"
-              "  SelectPeriph('Service');\n"
-              "}\n");
+              "  SrvVisible();\n"
+              "  for(let i=0; i<controls.length; i++){\n"
+              "    SelectPeriph(controls[i].name);\n"
+              "  }\n"
+              "}\n\n");
   
-  
+  fprintf(pf, "function tbl_col_update(){\n"
+              "  let mcu = document.getElementById(\"mcuselected\").value;\n"
+              "  let tbl = document.getElementsByName(mcu);\n"
+              "  let lin = tbl[0].children[1];\n"
+              "  for(let j=0; j<tbl[0].children[1].children.length; j++){\n"
+              "    let col = -1;\n"
+              "    lin = tbl[0].children[1].children[j].getElementsByTagName(\"input\");\n"
+              "    for(let i=0; i<lin.length; i++){\n"
+              "      if(lin[i].name == \"usersel\"){\n"
+              "        col = lin[i].value;\n"
+              "        break;\n"
+              "      }\n"
+              "    }\n"
+              "    if(col == -1)return;\n"
+              "    lin = tbl[0].children[1].children[j];\n"
+              "    if(col == \"#ffffff\")col=\"\";\n"
+              "    lin.bgColor = col;\n"
+              "  }\n"
+              "  package_draw();\n"
+              "}\n\n");
+              
   fprintf(pf, "function OnLoad(){\n"
               "  SelectMCU();\n"
-              "  Periph_Vis_update()\n"
-              "}\n");
+              "  Periph_Vis_update();\n"
+              "  tbl_col_update();\n"
+              "}\n\n");
+  
+  fprintf(pf, "function tbl_export(){\n"
+              "  let mcu = document.getElementById(\"mcuselected\").value;\n"
+              "  let tbl = document.getElementsByName(mcu);\n"
+              "  \n"
+              "  let lin = tbl[0].children[0].children[0].children;\n"
+              "  let idx_col = -1, idx_pn = -1, idx_comm=-1;\n"
+              "  for(let i=0; i<lin.length; i++){\n"
+              "    if(lin[i].className == \"tbl_color\")idx_col = i;\n"
+              "    if(lin[i].className == \"tbl_pinname\")idx_pn = i;\n"
+              "    if(lin[i].className == \"tbl_comment\")idx_comm = i;\n"
+              "  }\n"
+              "  \n"
+              "  let res = mcu + \"\\n\";\n"
+              "  \n"
+              "  let col = -1;\n"
+              "  let cur = tbl[0].children[1].children;\n"
+              "  res += cur.length + \"\\n\";\n"
+              "  for(let i=0; i<cur.length; i++){\n"
+              "    col = cur[i].children[idx_col].children[0].value;\n"
+              "    let pn = cur[i].children[idx_pn].children[0].value;\n"
+              "    let comm = cur[i].children[idx_comm].children[0].children[0].value;\n"
+              "    res += i+\", \"+col+\", \"+pn+\", \"+comm+   \"\\n\";\n"
+              "  }\n"
+              "  \n"
+              "  res += controls.length + \"\\n\"\n"
+              "  console.log(controls.length);\n"
+              "  for(let i=0; i<controls.length; i++){\n"
+              "    res += controls[i].name +\", \"+ controls[i].checked + \"\\n\";\n"
+              "  }\n"
+              "  \n"
+              "  return res;\n"
+              "}\n"
+              "\n"
+              "function tbl_import(str){\n"
+              "  let arr = str.split(\"\\n\");\n"
+              "  let name = arr[0];\n"
+              "  let tbl = document.getElementsByName(name);\n"
+              "  if(tbl.length == 0){\n"
+              "    alert(\"MCU [\" + name + \"] not found\");\n"
+              "    return;\n"
+              "  }\n"
+              "  document.getElementById(\"mcuselected\").value = name;\n"
+              "  \n"
+              "  let linenum = 1;\n"
+              "  \n"
+              "  let lin = tbl[0].children[0].children[0].children;\n"
+              "  let idx_col = -1, idx_pn = -1, idx_comm=-1;\n"
+              "  for(let i=0; i<lin.length; i++){\n"
+              "    if(lin[i].className == \"tbl_color\")idx_col = i;\n"
+              "    if(lin[i].className == \"tbl_pinname\")idx_pn = i;\n"
+              "    if(lin[i].className == \"tbl_comment\")idx_comm = i;\n"
+              "  }\n"
+              "  \n"
+              "  let len = parseInt(arr[linenum]);\n"
+              "  linenum++;\n"
+              "  \n"
+              "  for(let i=linenum; i<(linenum+len); i++){\n"
+              "    cur = arr[i].split(\", \");\n"
+              "    if(cur == \"\"){len++; continue;}\n"
+              "    let idx = cur[0];\n"
+              "    lin = tbl[0].children[1].children[idx].children;\n"
+              "    lin[idx_col].children[0].value = cur[1];\n"
+              "    lin[idx_pn].children[0].value = cur[2];\n"
+              "    lin[idx_comm].children[0].children[0].value = cur[3];\n"
+              "  }\n"
+              "  linenum += len;\n"
+              "  \n"
+              "  len = parseInt(arr[linenum]);\n"
+              "  linenum++;\n"
+              "  for(let i=linenum; i<(linenum+len); i++){\n"
+              "    cur = arr[i].split(\", \");\n"
+              "    if(cur == \"\"){len++; continue;}\n"
+              "    let idx = controls.namedItem(cur[0]);\n"
+              "    idx.checked = (cur[1] == \"true\");\n"
+              "  }\n"
+              "  linenum += len;\n"
+              "  \n"
+              "  SelectMCU();\n"
+              "}\n"
+              "\n");
   
   html_write_drawfuncs(pf, 500);
 }
@@ -768,15 +871,14 @@ void html_write_scripts(FILE *pf){
 void html_write_ui(FILE *pf){
   fprintf(pf, "<select id=\"mcuselected\" onchange=\"SelectMCU()\">\n");
   for(int i=0; i<mcun; i++){
-    //fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[i].name, mcu[i].pack->name, mcu[i].name, mcu[i].pack->name);
     fprintf(pf, "  <option value=\"%s.%s\">%s.%s</option>\n", mcu[i].name, mcu[i].packname, mcu[i].name, mcu[i].packname);
   }
   fprintf(pf, "</select>\n\n<br>\n");
   for(int i=0; i<periphn; i++){
-    fprintf(pf, "<label for=\"Per.%s\">%s</label><input type=\"checkbox\" id=\"Per.%s\" name=\"Per.%s\" checked onclick=\"SelectPeriph('%s');\"/>\n", periph[i].name, periph[i].name, periph[i].name, periph[i].name, periph[i].name);
+    fprintf(pf, "<label for=\"Per.%s\">%s</label><input type=\"checkbox\" class=\"controls\" id=\"Per.%s\" name=\"%s\" checked onclick=\"SelectPeriph('%s');\"/>\n", periph[i].name, periph[i].name, periph[i].name, periph[i].name, periph[i].name);
   }
-  fprintf(pf, "<label for=\"Per.%s\">%s</label><input type=\"checkbox\" id=\"Per.%s\" name=\"Per.%s\" checked onclick=\"SelectPeriph('%s');\"/>\n", "Other", "Other", "Other", "Other", "Other");
-  fprintf(pf, "<input type=\"checkbox\" id=\"Per.Service\" name=\"Per.Service\" checked onclick=\"SelectPeriph('Service');\" hidden/>\n");
+  fprintf(pf, "<label for=\"Per.%s\">%s</label><input type=\"checkbox\" class=\"controls\" id=\"Per.%s\" name=\"%s\" checked onclick=\"SelectPeriph('%s');\"/>\n", "Other", "Other", "Other", "Other", "Other");
+  fprintf(pf, "<input type=\"checkbox\" class=\"controls\" id=\"Per.Service\" name=\"Service\" checked onclick=\"SelectPeriph('Service');\" hidden/>\n");
   fprintf(pf, "\n<br>\n");
   
   fprintf(pf, "<select id=\"srvsel\" onchange=\"SrvVisible()\">\n");
@@ -799,9 +901,9 @@ void html_write_table(FILE *pf, int idx){
   }
   fprintf(pf, "      <th><div>Service</div></th>\n");
   fprintf(pf, "      <th><div>Other</div></th>\n");
-  fprintf(pf, "      <th><div>Col</div></th>\n");
+  fprintf(pf, "      <th class=\"tbl_color\"><div>Col</div></th>\n");
   fprintf(pf, "      <th class=\"tbl_pinname\"><div>PN</div></th>\n");
-  fprintf(pf, "      <th><div>Comment</div></th>\n");
+  fprintf(pf, "      <th class=\"tbl_comment\"><div>Comment</div></th>\n");
   fprintf(pf, "    </tr>\n  </thead>\n");
   fprintf(pf, "  <tbody>\n");
   int ln = 0;
