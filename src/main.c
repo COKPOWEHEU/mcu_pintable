@@ -190,11 +190,11 @@ void mcu_free(){
     if(mcu[i].packname)free(mcu[i].packname);
     if(mcu[i].per){
       for(int j=0; j<mcu[i].pack->pinn; j++){
-        //printf("mcu [%s.%s].%i = %s\n", mcu[i].name, altname(i), j, mcu[i].per[j].funcs);
         if(mcu[i].per[j].funcs)free(mcu[i].per[j].funcs);
       }
       free(mcu[i].per);
     }
+    if(mcu[i].pack!=NULL){pack_free(mcu[i].pack); free(mcu[i].pack);}
   }
   free(mcu);
   mcu = NULL; mcun = 0; mcualloc = 0;
@@ -208,25 +208,21 @@ void mcu_resolv_deps(){
     if(idx < 0){
       fprintf(stderr, "MCU [%s]: package [%s] not found\n", mcu[i].name, mcu[i].packname);
       pack_t *p = pack_dummy(mcu[i].packname, packs_maxpins);
-      idx = packnum;
-      pack_add(p);
-      mcu[i].pack = &(pack[idx]);
-      free(p);
+      mcu[i].pack = p;
+    }else{
+      mcu[i].pack = pack_dup(&(pack[idx]));
     }
     
-    if(idx >= 0){
-      mcu[i].pack = &(pack[idx]);
-      int np = mcu[i].pack->pinn;
-      mcu[i].per = malloc(sizeof(periphlist_t) * np);
-      if(mcu[i].per == NULL){
-        fprintf(stderr, "Not enough memory\n");
-        fatalflag = 1; return;
-      }
-      for(int j=0; j<np; j++){
-        mcu[i].per[j].name[0] = 0;
-        mcu[i].per[j].num[0] = 0;
-        mcu[i].per[j].funcs = NULL;
-      }
+    int np = mcu[i].pack->pinn;
+    mcu[i].per = malloc(sizeof(periphlist_t) * np);
+    if(mcu[i].per == NULL){
+      fprintf(stderr, "Not enough memory\n");
+      fatalflag = 1; return;
+    }
+    for(int j=0; j<np; j++){
+      mcu[i].per[j].name[0] = 0;
+      mcu[i].per[j].num[0] = 0;
+      mcu[i].per[j].funcs = NULL;
     }
   }
 }
@@ -856,11 +852,45 @@ void html_write_tables(FILE *pf){
 
 void html_write_canvas(FILE *pf, float size){
   fprintf(pf, "<div id=\"col-2\">\n");
-  fprintf(pf, "  <canvas style=\"position:fixed; top:100px; left:70%%\" id=\"canvas\" width=\"%f\" height=\"%f\">Package</canvas>\n", size, size);
+  fprintf(pf, "  <canvas style=\"position:fixed; top:100px; left:70%%\" id=\"canvas\" onmousemove=\"cnv_procdrag(event);\" onwheel=\"cnv_wheel(event);\">Package</canvas>\n");
   fprintf(pf, "</div>\n");
 }
 
 void html_write_drawfuncs(FILE *pf, float size){
+  fprintf(pf, "var cnv_x=0, cnv_y=0, cnv_scale=1;\n"
+              "var cnv_dx=0, cnv_dy=0;\n"
+              "\n"
+              "function cnv_procdrag(event){\n"
+              "  if( event.buttons & 4){\n"
+              "    cnv_x = 0; cnv_y = 0; cnv_scale = 1; package_draw();\n"
+              "  }\n"
+              "  if( event.buttons & 1){\n"
+              "    cnv_x += event.clientX-cnv_dx;\n"
+              "    cnv_y += event.clientY-cnv_dy;\n"
+              "    package_draw();\n"
+              "  }\n"
+              "  cnv_dx = event.clientX;\n"
+              "  cnv_dy = event.clientY;\n"
+              "}\n"
+              "\n"
+              "function cnv_wheel(event){\n"
+              "  event.preventDefault();\n"
+              "  if(event.deltaY == 0)return;\n"
+              "  const canvas = document.getElementById(\"canvas\");\n"
+              "  let ds = 1;\n"
+              "  if(event.deltaY > 0){\n"
+              "    ds = 1/1.1;\n"
+              "  }else{\n"
+              "    ds = 1.1;\n"
+              "  }\n"
+              "  let X = event.clientX-canvas.offsetLeft, Y = event.clientY-canvas.offsetTop;\n"
+              "  cnv_x = cnv_x*ds + X*(1-ds);\n"
+              "  cnv_y = cnv_y*ds + Y*(1-ds);\n"
+              "  cnv_scale *= ds;\n"
+              "  \n"
+              "  package_draw();\n"
+              "}\n");
+  
   fprintf(pf, "function package_draw(){\n"
               "  const funcs = [\n");
   for(int i=0; i<mcun; i++){
@@ -871,9 +901,17 @@ void html_write_drawfuncs(FILE *pf, float size){
               "  if( !canvas.getContext )return;\n"
               "  const ctx = canvas.getContext(\"2d\");\n"
               "  let mcu = document.getElementById(\"mcuselected\").value \n"
-              "  let tbl = document.getElementsByName(mcu);\n");
-  fprintf(pf, "  let x=0, y=0, scale=%f;\n", size);
-  fprintf(pf, "  var pkg_draw_prev = -1;\n"
+              "  let tbl = document.getElementsByName(mcu);\n"
+              "  let x=cnv_x, y=cnv_y, scale=500;\n"
+              "\n"
+              "  let w = canvas.parentNode.clientWidth;\n"
+              "  let h = canvas.parentNode.clientHeight;\n"
+              "  if(w < h)scale = w; else scale = h;\n"
+              "  canvas.width = w;\n"
+              "  canvas.height = h;\n"
+              "  scale *= cnv_scale;\n"
+              "\n"
+              "  var pkg_draw_prev = -1;\n"
               "  for(let i=0; i<funcs.length; i++){\n"
               "    if(funcs[i][0] == mcu){\n"
               "      if(pkg_draw_prev != i){\n"
@@ -1132,6 +1170,7 @@ int main(int argc, char **argv){
       }
     }
   }
+  pack_path_append("./");
 
   if(inputfile == NULL){
     help(argv[0]); return 0;
@@ -1159,7 +1198,6 @@ int main(int argc, char **argv){
     //printf("Unknown: [%s]\n", buf);
   }
   
-  pack_path_append("packages_KiCad");
   packs_load();
   mcu_resolv_deps();
   test_deps();

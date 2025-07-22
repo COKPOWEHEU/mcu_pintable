@@ -18,6 +18,7 @@ typedef struct{
 
 char* pack_search_name(char *filename);
 pack_t* pack_load(char *filename);
+pack_t* pack_dup(pack_t *src);
 void pack_free(pack_t *p);
 void pack_test(pack_t *p);
 void pack_html_common(FILE *pf);
@@ -104,6 +105,6 @@ typedef struct{
   size_t graphn;
 }intr_t;
 
-#define pintr ((intr_t*)(p->internal))
+#define pintr ((intr_t*)(p->intr))
 
 #endif

@@ -347,7 +347,6 @@ pack_t* pack_dummy(char *name, int npins){
   pack_t *p = malloc(sizeof(pack_t));
   if(p == NULL){fprintf(stderr, "pack_KiCad.pack_load: not enougn memory\n"); return NULL;}
   p->name = strdup(name);
-  //p->name = strdup("Dummy");
   p->descr = strdup("Dummy");
   
   p->intr = malloc(sizeof(intr_t));
@@ -363,6 +362,31 @@ pack_t* pack_dummy(char *name, int npins){
     p->pin[i].w = p->pin[i].h = 1;
     pintr->pinshape[i] = pin_unknown;
   }
+  return p;
+}
+
+pack_t* pack_dup(pack_t *src){
+  pack_t *p = malloc(sizeof(pack_t));
+  if(p == NULL){fprintf(stderr, "pack_KiCad.pack_load: not enougn memory\n"); return NULL;}
+  p->name = strdup(src->name);
+  if(src->descr)p->descr = strdup(src->descr); else p->descr = NULL;
+  p->pinn = src->pinn;
+  p->pin = malloc(sizeof(pack_pin_t) * p->pinn);
+  
+  p->intr = malloc(sizeof(intr_t));
+  pintr->graphn = ((intr_t*)(src->intr))->graphn;
+  pintr->graph = malloc(sizeof(pack_graph_t) * pintr->graphn);
+  pintr->pinshape = malloc(sizeof(pack_pinsh_t) * p->pinn);
+  
+  if((pintr->pinshape==NULL)||(pintr->graph==NULL)||(p->pin==NULL)){
+    pack_free(p);
+    fprintf(stderr, "pack_KiCad.pack_load: not enough memory\n");
+    return NULL;
+  }
+  memcpy(p->pin, src->pin, sizeof(pack_pin_t) * p->pinn);
+  memcpy(pintr->graph, ((intr_t*)(src->intr))->graph, sizeof(pack_graph_t) * pintr->graphn);
+  memcpy(pintr->pinshape, ((intr_t*)(src->intr))->pinshape, sizeof(pack_pinsh_t) * p->pinn);
+  
   return p;
 }
 
@@ -399,7 +423,7 @@ void pack_test(pack_t *p){
 }
 
 void pack_html_common(FILE *pf){
-  fprintf(pf, "function pack_html_draw(ctx, tbl, x, y, scale, pins, pin_names, graph){\n"
+  fprintf(pf, "function pack_html_draw(ctx, tbl, x, y, scale, font_sz, pins, pin_names, graph){\n"
               "  const patternCanvas = document.createElement(\"canvas\");\n"
               "  const patternContext = patternCanvas.getContext(\"2d\");\n"
               "  patternCanvas.width = 10;\n"
@@ -438,7 +462,7 @@ void pack_html_common(FILE *pf){
               "  ctx.fillStyle =\"rgb(0 0 0)\";\n"
               "  ctx.textBaseline = \"middle\";\n"
               "  ctx.textAlign = \"center\";\n"
-              "  ctx.font = scale*0.040064 + \"px serif\";\n"
+              "  ctx.font = scale*font_sz + \"px serif\";\n"
               "\n"
               "  let colnum = -1;\n"
               "  let hdr = tbl[0].parentElement.parentElement.children[0].children[0].children;\n"
@@ -465,11 +489,11 @@ void pack_html_common(FILE *pf){
               "  ctx.beginPath();\n"
               "  for(let i=0; i<graph.length; i++){\n"
               "    if(graph[i][0] == 'l'){\n"
-              "      ctx.moveTo(x + graph[i][1]*scale, x + graph[i][2]*scale); ctx.lineTo(x + graph[i][3]*scale, y + graph[i][4]*scale);\n"
+              "      ctx.moveTo(x + graph[i][1]*scale, y + graph[i][2]*scale); ctx.lineTo(x + graph[i][3]*scale, y + graph[i][4]*scale);\n"
               "    }else if(graph[i][0] == 'a'){\n"
-              "      ctx.moveTo(x + graph[i][1]*scale, x + graph[i][2]*scale); ctx.arc(x+graph[i][1]*scale, y+graph[i][2]*scale, graph[i][3]*scale, graph[i][4], graph[i][5], graph[i][6]);\n"
+              "      ctx.moveTo(x + graph[i][1]*scale, y + graph[i][2]*scale); ctx.arc(x+graph[i][1]*scale, y+graph[i][2]*scale, graph[i][3]*scale, graph[i][4], graph[i][5], graph[i][6]);\n"
               "    }else if(graph[i][0] == 'r'){\n"
-              "      ctx.fillRect(x + graph[i][1]*scale, x + graph[i][2]*scale, graph[i][3]*scale, graph[i][4]*scale);\n"
+              "      ctx.fillRect(x + graph[i][1]*scale, y + graph[i][2]*scale, graph[i][3]*scale, graph[i][4]*scale);\n"
               "    }else if(graph[i][0] == 'c'){\n"
               "      ctx.ellipse(x + graph[i][1]*scale, y + graph[i][2]*scale, graph[i][3]*scale, graph[i][4]*scale, 0,0,Math.PI*2); ctx.fill();\n"
               "    }\n"
@@ -559,7 +583,5 @@ void pack_html_export(pack_t *p, FILE *pf){
   }
   fprintf(pf, "  ];\n");
   
-  fprintf(pf, "\n"
-              "  pack_html_draw(ctx, tbl, x,y,scale, pins, pin_names, graph);\n"
-              "");
+  fprintf(pf, "  pack_html_draw(ctx, tbl, x, y, scale, %f, pins, pin_names, graph);\n", sz);
 }
