@@ -737,6 +737,7 @@ void html_write_scripts(FILE *pf){
               "  lin = tbl[0].children[1].children[linenum];\n"
               "  if(col == \"#ffffff\")col=\"\";\n"
               "  lin.bgColor = col;\n"
+              "  package_draw();\n"
               "}\n\n");
   
   fprintf(pf, "function SelectMCU(){\n"
@@ -809,7 +810,7 @@ void html_write_scripts(FILE *pf){
               "  }\n"
               "  \n"
               "  res += controls.length + \"\\n\"\n"
-              "  console.log(controls.length);\n"
+              "  \n"
               "  for(let i=0; i<controls.length; i++){\n"
               "    res += controls[i].name +\", \"+ controls[i].checked + \"\\n\";\n"
               "  }\n"
@@ -863,6 +864,27 @@ void html_write_scripts(FILE *pf){
               "  \n"
               "  SelectMCU();\n"
               "}\n"
+              "\n"
+              "function SaveToFile(){\n"
+              "  let text = tbl_export();\n"
+              "  let blob = new Blob([text], { type: 'text/plain' });\n"
+              "  let link = document.createElement('a');\n"
+              "  link.href = URL.createObjectURL(blob);\n"
+              "  let filename = document.getElementById(\"mcuselected\").value + \".pincfg\";\n"
+              "  link.download = filename;\n"
+              "  link.click();\n"
+              "}\n"
+              "\n"
+              "function LoadFromFile(){\n"
+              "  var file = document.getElementById(\"LoadFile\").files[0];\n"
+              "  if(!file){return;}\n"
+              "  const reader = new FileReader();\n"
+              "  function LoadFromFile_done(){\n"
+              "    tbl_import(reader.result);\n"
+              "  }\n"
+              "  reader.onload = LoadFromFile_done;\n"
+              "  reader.readAsText(file);\n"
+              "}\n"
               "\n");
   
   html_write_drawfuncs(pf, 500);
@@ -881,11 +903,16 @@ void html_write_ui(FILE *pf){
   fprintf(pf, "<input type=\"checkbox\" class=\"controls\" id=\"Per.Service\" name=\"Service\" checked onclick=\"SelectPeriph('Service');\" hidden/>\n");
   fprintf(pf, "\n<br>\n");
   
-  fprintf(pf, "<select id=\"srvsel\" onchange=\"SrvVisible()\">\n");
-  fprintf(pf, "  <option value=\"srv_show\">Service lines: Show</option>\n");
-  fprintf(pf, "  <option value=\"srv_opt\">Service lines: Remap only</option>\n");
-  fprintf(pf, "  <option value=\"srv_hide\">Service lines: Hide</option>\n");
-  fprintf(pf, "</select>\n");
+  fprintf(pf, "<select id=\"srvsel\" onchange=\"SrvVisible()\">\n"
+              "  <option value=\"srv_show\">Service lines: Show</option>\n"
+              "  <option value=\"srv_opt\">Service lines: Remap only</option>\n"
+              "  <option value=\"srv_hide\">Service lines: Hide</option>\n"
+              "</select>\n");
+  
+  fprintf(pf, "<input type=\"button\" value=\"Save\" onclick=\"SaveToFile()\"/>\n"
+              "<input type=\"file\" id=\"LoadFile\" accept=\".pincfg\" onchange=\"LoadFromFile();\"/>\n"
+              "\n");
+
 }
 
 void html_write_table(FILE *pf, int idx){
