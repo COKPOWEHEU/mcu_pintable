@@ -63,7 +63,7 @@ Content:
 | TDO  | 71 | SRV.F.TDO |
 | TMS  | 70 | SRV.F.TMS |
 | TRST | 76 | SRV.F.TRST |
-|SERVEN| 50 | SRV.F.SERVEN |
+|SERVEN| 50 | SRV.F.SERVEN | Очень важный вывод! Позволяет раскирпичить микросхему, если будете неаккуратны, например, с WAKECFG
 |OSC32_IN|97| SRV.F.OSC32_IN |
 |OSC32_OUT|96|SRV.F.OSC32_OUT |
 |USB_D-| 31 | USB_D- |
@@ -90,10 +90,13 @@ Content:
 | GND1    | 94; 74; 52; 32; 11 | SRV.F.GND |
 | VCC     | 93; 75; 61; 51; 33; 16; 12 | SRV.F.VCC |
 | VBAT    | 14 | SRV.F.VBAT |
-| VAON_CAP| 13 | SRV.F.VAON_CAP |
-|VCORE_CAP| 17 | SRV.F.VCORE_CAP |
-| VBAT_CAP| 15 | SRV.F.VBAT_CAP |
+| VAON_CAP| 13 | SRV.F.VAON_CAP | COMM[1]
+|VCORE_CAP| 17 | SRV.F.VCORE_CAP | COMM[1]
+| VBAT_CAP| 15 | SRV.F.VBAT_CAP | COMM[1]
 | VCC2    | 19 | SRV.F.VCC |
 | GND2    | 20 | SRV.F.GND |
-| AREF    | 18 | SRV.F.AREF |
-|SDADC_CAP| 25 | SRV.F.SDADC_CAP |
+| AREF    | 18 | SRV.F.AREF | COMM[2]
+|SDADC_CAP| 25 | SRV.F.SDADC_CAP | COMM[1]
+
+Comment1 Вывод подключения конденсатора
+Comment2 Опорное напряжение ADCSRA (не SDADC!)

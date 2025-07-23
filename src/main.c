@@ -68,6 +68,7 @@ typedef struct{
   char name[20];
   char num[10];
   char *funcs;
+  char *comment;
 }periphlist_t;
 
 typedef struct{
@@ -99,6 +100,15 @@ periph_t per_srv = {
   .altname="SRV",
   .alen=3,
 };
+
+typedef struct{
+  char num[10];
+  char *data;
+}comment_t;
+comment_t *comment = NULL;
+size_t comment_n = 0;
+size_t comment_alloc = 0;
+const size_t comment_allocdn = 5;
 
 void packages_parse(char *buf){
   const char delim[] = "; \t\r\n";
@@ -193,6 +203,7 @@ void mcu_free(){
     if(mcu[i].per){
       for(int j=0; j<mcu[i].pack->pinn; j++){
         if(mcu[i].per[j].funcs)free(mcu[i].per[j].funcs);
+        if(mcu[i].per[j].comment)free(mcu[i].per[j].comment);
       }
       free(mcu[i].per);
     }
@@ -226,6 +237,7 @@ void mcu_resolv_deps(){
       mcu[i].per[j].name[0] = 0;
       mcu[i].per[j].num[0] = 0;
       mcu[i].per[j].funcs = NULL;
+      mcu[i].per[j].comment = NULL;
     }
   }
 }
@@ -464,6 +476,7 @@ void content_parse(char *capt, FILE *pf){
     
     //find 'Periph' field
     char *per = strrchr(buf, '|');
+    char *comm = per + 1;
     per[0] = 0;
     while(per[0] != '|'){
       if(per<=buf){fprintf(stderr, "%i: Wrong table line", linenum); fatalflag = 1; free(mcu_idx_tbl); return;}
@@ -471,6 +484,10 @@ void content_parse(char *capt, FILE *pf){
     }
     per[0] = 0;
     per++;
+    
+    while(isspace(comm[0]))comm++;
+    for(char *ch = comm + strlen(comm)-1; isspace(ch[0]) && ch>=comm; ch--)ch[0]=0;
+    if((ch == comm)||(comm[0]==0))comm=NULL;
     
     //find 'Name' field
     const char delim[] = "|";
@@ -510,6 +527,15 @@ void content_parse(char *capt, FILE *pf){
               mcu[j].per[pin].funcs = realloc(mcu[j].per[pin].funcs, strlen(mcu[j].per[pin].funcs)+strlen(per)+2);
               strcat(mcu[j].per[pin].funcs, per);
             }
+            
+            if(comm != NULL){
+              if(mcu[j].per[pin].comment == NULL){
+                mcu[j].per[pin].comment = strdup(comm);
+              }else{
+                mcu[j].per[pin].comment = realloc(mcu[j].per[pin].comment, strlen(mcu[j].per[pin].comment)+strlen(comm)+2);
+                strcat(mcu[j].per[pin].comment, comm);
+              }
+            }
         
           }
         }
@@ -520,6 +546,35 @@ void content_parse(char *capt, FILE *pf){
   free(mcu_idx_tbl);
   linenum--;
   fseek(pf, pos, SEEK_SET);
+}
+
+void comment_parse(char *buf){
+  if(comment_n + 1 >= comment_alloc){
+    comment_t *prev = comment;
+    comment = realloc(comment, sizeof(comment_t)*(comment_alloc + comment_allocdn));
+#warning TODO
+    comment_alloc += comment_allocdn;
+    for(int i=comment_n; i<comment_alloc; i++){
+      comment[i].num[0] = 0;
+      comment[i].data = NULL;
+    }
+  }
+  sscanf(buf, "%s %m[^\n]", comment[comment_n].num, &(comment[comment_n].data));
+  
+  comment_n++;
+}
+void comment_show(){
+  if(comment == NULL)return;
+  for(int i=0; i<comment_n; i++){
+    printf("Comment %i: [%s] %s\n", i, comment[i].num, comment[i].data);
+  }
+}
+void comment_free(){
+  if(comment == NULL)return;
+  for(int i=0; i<comment_n; i++){
+    if(comment[i].data)free(comment[i].data);
+  }
+  free(comment); comment_n = 0; comment_alloc = 0;
 }
 
 void test_mcu_complete(){
@@ -668,9 +723,9 @@ void packs_load(){
 
 void html_write_style(FILE *pf){
   fprintf(pf, 
-    "  body {\n"
+    "  /*body {\n"
     "    overflow: hidden;\n"
-    "  }\n"
+    "  }*/\n"
     "  table{\n"
     "    border-collapse: collapse; /* Убираем двойные линии между ячейками */ \n"
     "  }\n"
@@ -708,19 +763,19 @@ void html_write_style(FILE *pf){
     "  position: relative;\n"
     "  width: 70%%;\n"
     "  float: left;\n"
-    "  height: 100%%;\n"
+    "  height: 80%%;\n"
     "}\n"
     "\n"
     "#col-2 {\n"
     "  position: relative;\n"
     "  width: 30%%;\n"
     "  float: right;\n"
-    "  height: 100%%;\n"
+    "  height: 80%%;\n"
     "}\n"
     ".table_wrapper{\n"
     "  display: block;\n"
     "  overflow-x: auto;\n"
-    "  height: 80%%;\n"
+    "  height: 100%%;\n"
     "  white-space: nowrap;\n"
     "}\n"
   );
@@ -836,6 +891,30 @@ void html_write_scripts(FILE *pf){
               "  SelectMCU();\n"
               "  Periph_Vis_update();\n"
               "  tbl_col_update();\n"
+              "}\n\n");
+  
+  fprintf(pf, "var comment_event = false;\n"
+              "function href_onclick(name){\n"
+              "let det = document.getElementById(\"details_comments\");\n"
+              "  comment_event = true;\n"
+              "  det.setAttribute(\"open\",\"\");\n"
+              "  console.log(name);\n"
+              "  for(let i=0; i<det.children.length; i++){\n"
+              "    if(det.children[i].id != name){\n"
+              "      det.children[i].style = \"\";\n"
+              "    }else{\n"
+              "      console.log(\"found\");\n"
+              "      det.children[i].style = \"background-color:powderblue;\";\n"
+              "    }\n"
+              "  }\n"
+              "}\n"
+              "\n"
+              "function comm_ontoggle(){\n"
+              "  if(comment_event){comment_event=false; return;}\n"
+              "  let det = document.getElementById(\"details_comments\");\n"
+              "  for(let i=0; i<det.children.length; i++){\n"
+              "    det.children[i].style = \"\";\n"
+              "  }\n"
               "}\n\n");
   
   fprintf(pf, "function tbl_export(){\n"
@@ -981,6 +1060,62 @@ void html_write_ui(FILE *pf){
 
 }
 
+void html_table_comments(FILE *pf, mcu_t *m, int idx){
+  fprintf(pf, "      <td><div>");
+  size_t filepos = ftell(pf);
+  fprintf(pf, "<abbr title=\"");
+  char *str = m->per[idx].comment;
+  char *prev = str;
+  char name[10];
+  char links[1000] = "<sup>";
+  char *linkpos = links + sizeof("<sup>")-1;
+  while(1){
+    str = strstr(str, "COMM[");
+    if(str == NULL)break;
+    
+    int found = 0;
+    for(int i=0; i<(str-prev); i++){
+      if( !isspace(prev[i]) && (prev[i]!=';') ){found = 1; break;}
+    }
+    if(found){
+      fwrite(prev, 1, (str - prev), pf);
+      fprintf(pf, " ");
+    }
+    
+    prev = str + sizeof("COMM[")-1;
+    str = strchr(prev, ']');
+    if(str == NULL)break;
+    
+    sscanf(prev, "%[^]]", name);
+    found = -1;
+    for(int i=0; i<comment_n; i++){
+      if(strcmp(name, comment[i].num)==0){found = i; break;}
+    }
+    if(found >= 0){
+      sprintf(linkpos, "<a href=\"#comment_%s\" onclick=\"href_onclick('comment_%s');\">%s</a>, ", name, name, name);
+      linkpos += strlen(linkpos);
+    }
+    
+    prev = str = str+1;
+  }
+  if(linkpos > (links + sizeof("<sup"))){
+    sprintf(linkpos-2, "</sup>");
+  }else{
+    links[0] = 0;
+  }
+  if((prev != str) && (prev[0]!=0)){
+    fprintf(pf, "%s", prev);
+  }
+  
+  size_t filepos2 = ftell(pf);
+  if(filepos2 <= (filepos + sizeof("<abbr title=\""))){
+    fseek(pf, filepos, SEEK_SET);
+    fprintf(pf, "%s%s</div></td>\n", m->per[idx].name, links);
+  }else{
+    fprintf(pf, "\">%s%s</abbr></div></td>\n", m->per[idx].name, links);
+  }
+}
+
 void html_write_table(FILE *pf, int idx){
   mcu_t *m = &(mcu[idx]);
   if(m->per == NULL)return;
@@ -1010,7 +1145,12 @@ void html_write_table(FILE *pf, int idx){
     }
     //Fixed fields: num, name
     fprintf(pf, "      <td><div>%s</div></td>\n", m->per[i].num);
-    fprintf(pf, "      <td><div>%s</div></td>\n", m->per[i].name);
+    if(m->per[i].comment == NULL){
+      fprintf(pf, "      <td><div>%s</div></td>\n", m->per[i].name);
+    }else{
+      html_table_comments(pf, m, i);
+      //fprintf(pf, "      <td><div><abbr title=\"%s\">%s</abbr></div></td>\n", m->per[i].comment, m->per[i].name);
+    }
     //Variable fields: periph
     for(int j=0; j<periphn; j++){
       fprintf(pf, "      <td><div>%s</div></td>\n", match_periph(m->per[i].funcs, &periph[j]));
@@ -1048,7 +1188,7 @@ void html_write_tables(FILE *pf){
 
 void html_write_canvas(FILE *pf, float size){
   fprintf(pf, "<div id=\"col-2\">\n");
-  fprintf(pf, "  <canvas style=\"position:fixed; top:100px; left:70%%\" id=\"canvas\" onmousemove=\"cnv_procdrag(event);\" onwheel=\"cnv_wheel(event);\">Package</canvas>\n");
+  fprintf(pf, "  <canvas id=\"canvas\" onmousemove=\"cnv_procdrag(event);\" onwheel=\"cnv_wheel(event);\">Package</canvas>\n");
   fprintf(pf, "</div>\n");
 }
 
@@ -1138,6 +1278,17 @@ void html_write_drawfuncs(FILE *pf, float size){
   }
 }
 
+void html_write_comments(FILE *pf){
+  if(comment == NULL)return;
+  fprintf(pf, "<br>\n");
+  fprintf(pf, "<details id=\"details_comments\" ontoggle=\"comm_ontoggle();\"><summary>Примечания</summary>\n");
+  for(int i=0; i<comment_n; i++){
+    fprintf(pf, "<p id=\"comment_%s\"><sup>%s</sup>). %s</p>\n", comment[i].num, comment[i].num, comment[i].data);
+  }
+  fprintf(pf, "</details>\n");
+  fprintf(pf, "\n");
+}
+
 void html_write(FILE *pf){
   fprintf(pf, "<head>\n\n<style type=\"text/css\">\n");
   html_write_style(pf);
@@ -1152,6 +1303,7 @@ void html_write(FILE *pf){
   fprintf(pf, "\n\n</form>\n\n");
   html_write_tables(pf);
   html_write_canvas(pf, 500);
+  html_write_comments(pf);
   fprintf(pf, "\n\n</body>\n");
 }
 
@@ -1255,98 +1407,6 @@ void dirfiles_read(char *dirname, char *extname, dirfiles_func_t callback, void 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-void test(pack_t *p){
-  FILE *pf = fopen("gr.html", "w");
-  float size = 500;
-  fprintf(pf, "<head> \n"
-              "\n"
-              "<style type=\"text/css\">\n"
-              "table{\n"
-             "    border-collapse: collapse;\n"
-             "}\n"
-             "td, th{\n"
-             "    border: 1px solid black;\n"
-             "    width:auto;\n"
-             "    text-align: center;\n"
-             "}\n"
-             "th{\n"
-             "    background: #b0e0e6;\n"
-             "}\n"
-              "</style>\n"
-              "\n"
-              "<script>\n"
-              "function draw(){\n"
-              "  const canvas = document.getElementById(\"canvas\");\n"
-              "  if( !canvas.getContext )return;\n"
-              "  const ctx = canvas.getContext(\"2d\");\n"
-              "  let tbl = document.getElementsByName(\"Table_test\");\n");
-  fprintf(pf, "  let x=0, y=0, scale=%f\n", size);
-  fprintf(pf, "  draw_mcu(ctx, tbl[0].children[1].children, x, y, scale); \n"
-              "}\n"
-              "var table_selected = -1;\n"
-              "\n"
-              "function draw_mcu(ctx, tbl, x, y, scale){\n");
-  
-  pack_html_export(p, pf);
-  
-  fprintf(pf, "}\n"
-              "window.addEventListener(\"load\", draw);\n"
-              "\n"
-              "function table_onmouse(idx){\n"
-              "  table_selected = idx;\n"
-              "  draw();\n"
-              "}\n"
-              "\n"
-              "</script>\n"
-              "</head>\n<body>\n"
-              "<canvas id=\"canvas\" width=\"%f\" height=\"%f\"></canvas>\n", size, size);
-              
-  fprintf(pf, "<table name=\"Table_test\"  onmouseleave=\"table_onmouse(-1);\">\n "
-              "  <thead>\n"
-              "    <tr>\n"
-              "      <th>Pin</th>\n"
-              "      <th>Name</th>\n"
-              "      <th>UART</th>\n"
-              "      <th>SPI</th>\n"
-              "      <th class=\"tbl_pinname\">Comm</th>\n"
-              "    </tr>\n  </thead>\n  <tbody>\n"
-              "    <tr onmousemove=\"table_onmouse(0);\">\n"
-              "      <td>1</td>\n"
-              "      <td>GND</td>\n"
-              "      <td></td>\n"
-              "      <td></td>\n"
-              "      <td><input type=\"text\" onchange=\"table_onmouse(-1);\"/></td>\n"
-              "    </tr>\n    <tr onmousemove=\"table_onmouse(1);\"  bgcolor=\"red\">\n"
-              "      <td>2</td>\n"
-              "      <td>PA1</td>\n"
-              "      <td>Tx</td>\n"
-              "      <td></td>\n"
-              "      <td><input type=\"text\" onchange=\"table_onmouse(-1);\"/></td>\n"
-              "    </tr>\n    <tr onmousemove=\"table_onmouse(2);\">\n"
-              "      <td>3</td>\n"
-              "      <td>PA2</td>\n"
-              "      <td>Rx</td>\n"
-              "      <td>SCK</td>\n"
-              "      <td><input type=\"text\" onchange=\"table_onmouse(-1);\"/></td>\n"
-              "    </tr>\n"
-              "  </tbody>\n"
-              "</table>\n");
-  
-  fprintf(pf, "</body>");
-  fclose(pf);
-}
-
-int main1(int argc, char **argv){
-  if(argc < 2){printf("select file name\n"); return 0;}
-  pack_t *p;
-  p = pack_load(argv[1]);
-  test(p);
-  pack_test(p);
-  pack_free(p);
-  return 0;
-}
-
 #define StrEq(str, templ) (strncmp(str, templ, sizeof(templ)-1)==0)
 int main(int argc, char **argv){
   char *inputfile = NULL;
@@ -1384,6 +1444,7 @@ int main(int argc, char **argv){
     if(StrEq(ch, "Packages:")){packages_parse(buf + sizeof("Packages:")-1); continue;}
     if(StrEq(ch, "MCU:")){mcu_parse(buf + sizeof("MCU:")-1); continue;}
     if(StrEq(ch, "Periph:")){parse_periph(buf + sizeof("Periph:")-1); continue;}
+    if(StrEq(ch, "Comment")){comment_parse(ch + sizeof("Comment")-1); continue;}
     if(StrEq(ch, "Content:")){
       int ln = linenum;
       content_skip(buf + sizeof("Content:")-1, pf);
@@ -1428,6 +1489,7 @@ destroy_all:
   packs_free();
   pack_path_free();
   mcu_baseperiph_free();
+  comment_free();
   
   if(alloc_out){free(outputfile);}
   return 0;
