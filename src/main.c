@@ -849,14 +849,15 @@ void html_write_scripts(FILE *pf){
               "}\n\n");
   
   fprintf(pf, "function SelectMCU(){\n"
-              "  let mcu = document.getElementById(\"mcuselected\").value;\n"
+              "  let mcu = document.getElementById(\"mcuselected\");\n"
               "  let tables = document.getElementsByTagName(\"table\");\n"
               "  for(let i=0; i<tables.length; i++){\n"
-              "    tables[i].hidden = (tables[i].attributes.name.value != mcu);\n"
+              "    tables[i].hidden = (tables[i].attributes.name.value != mcu.value);\n"
               "  }\n"
               "  Periph_Vis_update();\n"
               "  package_draw();\n"
               "  tbl_col_update();\n"
+              "  document.title = mcu.children[mcu.selectedIndex].firstChild.data + \" - Pins\";\n"
               "}\n\n");
   
   fprintf(pf, "function Periph_Vis_update(){\n"
@@ -1008,11 +1009,12 @@ void html_write_scripts(FILE *pf){
               "}\n"
               "\n"
               "function SaveToFile(){\n"
+              "  let mcu = document.getElementById(\"mcuselected\");\n"
               "  let text = tbl_export();\n"
               "  let blob = new Blob([text], { type: 'text/plain' });\n"
               "  let link = document.createElement('a');\n"
               "  link.href = URL.createObjectURL(blob);\n"
-              "  let filename = document.getElementById(\"mcuselected\").value + \".pincfg\";\n"
+              "  let filename = mcu.children[mcu.selectedIndex].firstChild.data + \".pincfg\";\n"
               "  link.download = filename;\n"
               "  link.click();\n"
               "}\n"
@@ -1290,7 +1292,9 @@ void html_write_comments(FILE *pf){
 }
 
 void html_write(FILE *pf){
-  fprintf(pf, "<head>\n\n<style type=\"text/css\">\n");
+  fprintf(pf, "<head>\n");
+  fprintf(pf, "<title>%s</title>\n", "Pintable");
+  fprintf(pf, "\n<style type=\"text/css\">\n");
   html_write_style(pf);
   fprintf(pf, "\n</style>\n\n");
   fprintf(pf, "\n<script>\n\n");
