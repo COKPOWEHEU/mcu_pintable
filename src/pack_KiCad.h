@@ -4,6 +4,7 @@
 
 typedef struct{
   char name[20];
+  char vis;
   float x, y;
   float w, h;
 }pack_pin_t;

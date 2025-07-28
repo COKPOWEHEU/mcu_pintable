@@ -126,7 +126,7 @@ void packages_parse(char *buf){
       pack_list_alloc += pack_list_dn;
     }
     pack_list[pack_list_num].name = strdup(altname);
-    if(res == 2)pack_list[pack_list_num].path = strdup(name); else pack_list[pack_list_num].name = strdup(altname);
+    if(res == 2)pack_list[pack_list_num].path = strdup(name); else pack_list[pack_list_num].path = strdup(altname);
     pack_list[pack_list_num].pack_idx = -1;
     pack_list_num++;
     
@@ -345,6 +345,7 @@ void periph_free(){
 void test_deps(){
   if(pack == NULL){fprintf(stderr, "'Packages' section not found\n"); fatalflag = 1; return;}
   if(mcu == NULL){fprintf(stderr, "'MCU' section not found\n");fatalflag = 1; return;}
+  if(periph == NULL){fprintf(stderr, "'Periph' section not found\n");fatalflag = 1; return;}
   for(int i=0; i<mcun; i++){
     if(mcu[i].pack == NULL){
       fprintf(stderr, "MCU [%s]: package [%s] not found\n", mcu[i].name, mcu[i].packname);
@@ -352,8 +353,6 @@ void test_deps(){
       //return;
     }
   }
-  if(periph == NULL){fprintf(stderr, "'Periph' section not found\n");fatalflag = 1; return;}
-  
 }
 
 void content_skip(char *buf, FILE *pf){
@@ -378,7 +377,7 @@ char mcu_match(char *str, int mcuidx){
   if(str[0] != '['){
     char *en = strchr(str, '[');
     size_t len;
-    if(en != NULL)len = en - str; else len = strlen(str);
+    if(en != NULL)len = en - str + 1; else len = strlen(str) + 1;
     if(strncmp(m->name, str, len)!=0){return 0;}
     str += len;
   }
@@ -387,8 +386,7 @@ char mcu_match(char *str, int mcuidx){
     str++;
     char *en = strchr(str, ']');
     if(en == NULL){fprintf(stderr, "%i: Wrong MCU format [%s]\n", linenum, prevstr); return 0;}
-    size_t len = en - str;
-    //if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(altname(mcuidx), str, len)!=0)){return 0;}
+    size_t len = en - str + 1;
     if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(m->packname, str, len)!=0)){return 0;}
   }
   return 1;
@@ -598,6 +596,8 @@ void test_mcu_complete(){
         if(mcu[i].pack->pin[j].name[0] == 0)continue;
         if(mcu[i].per && mcu[i].per[j].funcs)continue;
         printf(" %s", mcu[i].pack->pin[j].name);
+        //mcu[i].pack->pin[j].name[0] = 0;
+        mcu[i].pack->pin[j].vis = 0;
       }
       printf("\n");
     }

@@ -22,6 +22,7 @@ typedef enum{
   pg_arc,
   pg_rect,
   pg_circ,
+  pg_unknown,
 }pg_type_t;
 
 typedef struct{
@@ -268,6 +269,12 @@ pack_t* pack_load(char *filename){
     fclose(pf);
     fprintf(stderr, "pack_KiCad.pack_load: not enough memory\n");
     return NULL;
+  }
+  
+  for(int i=0; i<p->pinn; i++){
+    p->pin[i].name[0] = 0;
+    p->pin[i].vis = 1;
+    pintr->pinshape[i] = pin_unknown;
   }
   
   int gr = 0, pin=0;
@@ -522,6 +529,7 @@ void pack_html_export(pack_t *p, FILE *pf){
   //Рисуем контактные площадки
   fprintf(pf, "  const pins = [\n");
   float sz = 1e20;
+  char cpin_found = 0;
   for(int i=0; i<p->pinn; i++){
     float w = p->pin[i].w;
     float h = p->pin[i].h;
@@ -536,6 +544,7 @@ void pack_html_export(pack_t *p, FILE *pf){
       fprintf(pf, "    ['r', %f, %f, %f, %f],//%i\n", x,y, w,h, i);
     }else if(pintr->pinshape[i] == pin_oval){
       fprintf(pf, "    ['c', %f, %f, %f, %f],//%i\n", x,y, w/2,h/2, i);
+      cpin_found = 1;
     }
   }
   fprintf(pf, "  ];\n");
@@ -547,7 +556,7 @@ void pack_html_export(pack_t *p, FILE *pf){
     char orient = 'h';
     if(p->pin[i].w*1.1 < p->pin[i].h)orient = 'v';
     int pnum = tblnum;
-    if(p->pin[i].name[0] != 0)tblnum++; else pnum = -1;
+    if((p->pin[i].name[0] != 0)&&(p->pin[i].vis))tblnum++; else pnum = -1;
     fprintf(pf, "    ['%c', %f, %f, \"%s\", %i], //%i\n", orient, x, y, p->pin[i].name, pnum, i);
   }
   fprintf(pf, "  ];\n");
@@ -597,5 +606,6 @@ void pack_html_export(pack_t *p, FILE *pf){
   }
   fprintf(pf, "  ];\n");
   
+  if(cpin_found) sz *= 0.7;
   fprintf(pf, "  pack_html_draw(ctx, tbl, x, y, scale, %f, pins, pin_names, graph);\n", sz);
 }
