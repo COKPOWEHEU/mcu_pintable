@@ -733,6 +733,7 @@ void html_write_style(FILE *pf){
     "    border: 1px solid black; /* Параметры рамки */ \n"
     "    width:auto;\n"
     "    text-align: center;\n"
+    "    text-shadow: 0 0 1px #ffffff;"
     "  }\n"
     "  th{\n"
     "    background: #b0e0e6; /* Цвет фона */ \n"
@@ -742,8 +743,10 @@ void html_write_style(FILE *pf){
     "    border: none !important; /* В результате границы становятся абсолютно незаметными */ \n"
     "  }\n"
     "  .hltext{\n"
+    "    padding: 1px;\n"
+    "    border: 2px dotted #ffffff;\n"
     "    color: #000000;\n"
-    "    background-color:#ff808080;\n"
+    "    background-color:#c0c0c080;\n"
     "  }\n"
     "  input[type=\"checkbox\"]{\n"
     "    margin-right: 20px;\n"
@@ -845,6 +848,10 @@ void html_write_scripts(FILE *pf){
               "  lin = tbl[0].children[1].children[linenum];\n"
               "  if(col == \"#ffffff\")col=\"\";\n"
               "  lin.bgColor = col;\n"
+              "  package_draw();\n"
+              "}\n\n");
+  
+  fprintf(pf, "function PN_input(){\n"
               "  package_draw();\n"
               "}\n\n");
   
@@ -1171,7 +1178,7 @@ void html_write_table(FILE *pf, int idx){
     //Fixed fields: Col, PN, Comment
     fprintf(pf, "      <td><input name=\"usersel\" type=\"color\" value=\"#ffffff\" onchange=\"SelectColor(%i);\"/></td>\n", ln); //Sel
     ln++;
-    fprintf(pf, "      <td><input type=\"text\" value=\"\" size=\"2\"/></td>\n"); //PN
+    fprintf(pf, "      <td><input type=\"text\" value=\"\" size=\"2\" onchange=\"PN_input();\"/></td>\n"); //PN
     fprintf(pf, "      <td><div><input type=\"text\" value=\"\"/></div></td>\n"); //Comment
   }
   fprintf(pf, "  </tbody>\n</table>\n");
@@ -1221,7 +1228,7 @@ void html_write_drawfuncs(FILE *pf, float size){
               "  }else{\n"
               "    ds = 1.1;\n"
               "  }\n"
-              "  let X = event.clientX-canvas.offsetLeft, Y = event.clientY-canvas.offsetTop;\n"
+              "  let X = event.clientX-canvas.parentNode.offsetLeft, Y = event.clientY-canvas.parentNode.offsetTop;\n"
               "  cnv_x = cnv_x*ds + X*(1-ds);\n"
               "  cnv_y = cnv_y*ds + Y*(1-ds);\n"
               "  cnv_scale *= ds;\n"
