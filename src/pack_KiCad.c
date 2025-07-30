@@ -444,7 +444,7 @@ void pack_test(pack_t *p){
 }
 
 void pack_html_common(FILE *pf){
-  fprintf(pf, "function pack_html_draw(ctx, tbl, x, y, scale, font_sz, pins, pin_names, graph){\n"
+  fprintf(pf, "function pack_html_draw(ctx, tbl, x, y, scale, font_sz, pins, pin_names, drawnames, graph){\n"
               "  const patternCanvas = document.createElement(\"canvas\");\n"
               "  const patternContext = patternCanvas.getContext(\"2d\");\n"
               "  patternCanvas.width = 10;\n"
@@ -493,6 +493,7 @@ void pack_html_common(FILE *pf){
               "  for(let i=0; i<pin_names.length; i++){\n"
               "    let name = pin_names[i][3];\n"
               "    let idx = pin_names[i][4];\n"
+              "    if(drawnames){name = tbl[idx].children[1].children[0].textContent;}\n"
               "    if((colnum >= 0) && (idx >= 0) && (idx < tbl.length)){\n"
               "      let val = tbl[idx].children[colnum].children[0].value;\n"
               "      if(val != \"\")name = val;\n"
@@ -607,5 +608,5 @@ void pack_html_export(pack_t *p, FILE *pf){
   fprintf(pf, "  ];\n");
   
   if(cpin_found) sz *= 0.7;
-  fprintf(pf, "  pack_html_draw(ctx, tbl, x, y, scale, %f, pins, pin_names, graph);\n", sz);
+  fprintf(pf, "  pack_html_draw(ctx, tbl, x, y, scale, %f, pins, pin_names, drawnames, graph);\n", sz);
 }

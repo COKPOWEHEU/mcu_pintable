@@ -648,9 +648,10 @@ char* match_periph(char *funcs, periph_t *per){
         if(pos >= 0)break;
       }
       if(pos < 0)pos = 0; else pos = -1;
-      if(pos == 0){if(test_periph(str, &per_srv)>=0)pos=-1;}
+      if(per != &per_srv)if(pos == 0)if(test_periph(str, &per_srv)>=0)pos=-1;
     }
     if(pos >= 0){
+      if(per == &per_srv)pos+=2;
       str += pos;
       strcat(buf, periph_remap(str));
       strcat(buf, ", ");
@@ -874,6 +875,17 @@ void html_write_scripts(FILE *pf){
               "  }\n"
               "}\n\n");
   
+  fprintf(pf, "function HideAll(){\n"
+              "  let check = false;\n"
+              "  for(let i=0; i<controls.length; i++){\n"
+              "    check |= controls[i].checked;\n"
+              "  }\n"
+              "  for(let i=0; i<controls.length; i++){\n"
+              "    controls[i].checked = !check;\n"
+              "    SelectPeriph(controls[i].name);\n"
+              "  }\n"
+              "}\n\n");
+  
   fprintf(pf, "function tbl_col_update(){\n"
               "  let mcu = document.getElementById(\"mcuselected\").value;\n"
               "  let tbl = document.getElementsByName(mcu);\n"
@@ -1066,6 +1078,10 @@ void html_write_ui(FILE *pf){
   fprintf(pf, "<input type=\"button\" value=\"Save\" onclick=\"SaveToFile()\"/>\n"
               "<input type=\"file\" id=\"LoadFile\" accept=\".pincfg\" onchange=\"LoadFromFile();\"/>\n"
               "\n");
+  
+  fprintf(pf, "<label for=\"pinnames\">Pin names</label><input type=\"checkbox\" id=\"pinnames\" name=\"pinnames\" onclick=\"package_draw();\"/>\n");
+  
+  fprintf(pf, "<input type=\"button\" value=\"HideAll\" onclick=\"HideAll();\"/>\n");
 
 }
 
@@ -1146,11 +1162,12 @@ void html_write_table(FILE *pf, int idx){
   int ln = 0;
   for(int i=0; i<m->pack->pinn; i++){
     if(m->per[i].name[0] == 0)continue;
-    char *srv = match_periph(m->per[i].funcs, &per_srv);
-    if(srv[0]==0){
-      fprintf(pf, "    <tr onmousemove=\"table_onmouse(%i);\">\n", i);
+    if(strstr(m->per[i].funcs, "SRV.O") != NULL){
+      fprintf(pf, "    <tr class=\"tbl_srv_O\" onmousemove=\"table_onmouse(%i);\">\n", i);
+    }else if(strstr(m->per[i].funcs, "SRV.F") != NULL){
+      fprintf(pf, "    <tr class=\"tbl_srv_F\" onmousemove=\"table_onmouse(%i);\">\n", i);
     }else{
-      fprintf(pf, "    <tr class=\"tbl_srv_%c\" onmousemove=\"table_onmouse(%i);\">\n", srv[0], i);
+      fprintf(pf, "    <tr onmousemove=\"table_onmouse(%i);\">\n", i);
     }
     //Fixed fields: num, name
     fprintf(pf, "      <td><div>%s</div></td>\n", m->per[i].num);
@@ -1165,13 +1182,7 @@ void html_write_table(FILE *pf, int idx){
       fprintf(pf, "      <td><div>%s</div></td>\n", match_periph(m->per[i].funcs, &periph[j]));
     }
     //Fixed field: SRV
-    srv = match_periph(m->per[i].funcs, &per_srv);
-    if(srv[0]!=0){
-      srv+=2;
-      for(char *ch = srv+2; ch[0]!=0; ch++){
-        if(((ch[0] == 'F')||(ch[0]=='O'))&&(ch[1]=='.')){ch[0]=' '; ch[1]=' '; ch+=2;}
-      }
-    }
+    char *srv = match_periph(m->per[i].funcs, &per_srv);
     fprintf(pf, "      <td><div>%s</div></td>\n", srv);
     //Fixed field: 'Other'
     fprintf(pf, "      <td><div>%s</div></td>\n", match_periph(m->per[i].funcs, NULL)); //Other
@@ -1247,6 +1258,7 @@ void html_write_drawfuncs(FILE *pf, float size){
               "  const ctx = canvas.getContext(\"2d\");\n"
               "  let mcu = document.getElementById(\"mcuselected\").value \n"
               "  let tbl = document.getElementsByName(mcu);\n"
+              "  let drawnames = document.getElementById(\"pinnames\").checked;\n"
               "  let x=cnv_x, y=cnv_y, scale=500;\n"
               "\n"
               "  let w = canvas.parentNode.clientWidth;\n"
@@ -1266,7 +1278,7 @@ void html_write_drawfuncs(FILE *pf, float size){
               "        ctx.restore();\n"
               "        pkg_draw_prev = i;\n"
               "      }\n"
-              "      funcs[i][1](ctx, tbl[0].children[1].children, x, y, scale); \n"
+              "      funcs[i][1](ctx, tbl[0].children[1].children, x, y, scale, drawnames); \n"
               "      break;\n"
               "    }\n"
               "  }\n"
@@ -1281,7 +1293,7 @@ void html_write_drawfuncs(FILE *pf, float size){
               "\n");
   pack_html_common(pf);
   for(int i=0; i<mcun; i++){
-    fprintf(pf, "function package_draw_%s_%s(ctx, tbl, x, y, scale){\n", mcu[i].name, mcu[i].packname);
+    fprintf(pf, "function package_draw_%s_%s(ctx, tbl, x, y, scale, drawnames){\n", mcu[i].name, mcu[i].packname);
     pack_html_export(mcu[i].pack, pf);
     fprintf(pf, "}\n");
   }
