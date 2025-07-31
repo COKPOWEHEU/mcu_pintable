@@ -371,24 +371,30 @@ void content_skip(char *buf, FILE *pf){
   fseek(pf, pos, SEEK_SET);
 }
 
+//Test if str is mcu[mcuidx]
 char mcu_match(char *str, int mcuidx){
   char *prevstr = str;
   mcu_t *m = &(mcu[mcuidx]);
+  //printf("MCU match [%s] <> [%s][%s|%s]", str, m->name, m->pack->name, m->packname);
+  //test mcu.name
   if(str[0] != '['){
     char *en = strchr(str, '[');
     size_t len;
-    if(en != NULL)len = en - str + 1; else len = strlen(str) + 1;
-    if(strncmp(m->name, str, len)!=0){return 0;}
+    if(en != NULL)len = en - str; else len = strlen(str)+1;
+    if(strncmp(m->name, str, len)!=0){printf(""); return 0;}
+    
     str += len;
   }
+  //test mcu.pack.name
   if(m->pack == NULL)return 0;
   if(str[0] == '['){
     str++;
     char *en = strchr(str, ']');
     if(en == NULL){fprintf(stderr, "%i: Wrong MCU format [%s]\n", linenum, prevstr); return 0;}
-    size_t len = en - str + 1;
-    if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(m->packname, str, len)!=0)){return 0;}
+    size_t len = en - str;
+    if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(m->packname, str, len)!=0)){printf(""); return 0;}
   }
+  //printf("<<<< OK\n");
   return 1;
 }
 
