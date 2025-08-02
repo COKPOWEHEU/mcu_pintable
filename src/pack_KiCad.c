@@ -493,7 +493,7 @@ void pack_html_common(FILE *pf){
               "  for(let i=0; i<pin_names.length; i++){\n"
               "    let name = pin_names[i][3];\n"
               "    let idx = pin_names[i][4];\n"
-              "    if(drawnames){name = tbl[idx].children[1].children[0].textContent;}\n"
+              "    if(drawnames && (idx>=0)&&(idx<tbl.length)){name = tbl[idx].children[1].children[0].textContent;}\n"
               "    if((colnum >= 0) && (idx >= 0) && (idx < tbl.length)){\n"
               "      let val = tbl[idx].children[colnum].children[0].value;\n"
               "      if(val != \"\")name = val;\n"
