@@ -814,29 +814,30 @@ void html_write_scripts(FILE *pf){
               "    if(hdr.children[i].children.length < 2)continue;\n"
               "    hdr.children[i].children[idx].hidden = hid;\n"
               "  }\n"
+              "  UnusedVisible();\n"
               "}\n\n");
-
-  fprintf(pf, "function SrvVisible(){\n"
+  
+  fprintf(pf, "function UnusedVisible(){\n"
               "  let mcu = document.getElementById(\"mcuselected\").value;\n"
-              "  let tbl = document.getElementsByName(mcu);\n"
-              "  let ctl = document.getElementById(\"srvsel\").value;\n"
-              "  let sh_F=true, sh_O=true;\n"
-              "  let check = document.getElementsByName(\"Service\")[0];\n"
-              "  if(ctl == \"srv_show\"){sh_F=true; sh_O=true;}\n"
-              "  if(ctl == \"srv_opt\"){sh_F=false; sh_O=true;}\n"
-              "  if(ctl == \"srv_hide\"){sh_F=false; sh_O=false;}\n"
-              "  tbl = tbl[0].children[1].children;\n"
-              "  for(let i=0; i<tbl.length; i++){\n"
-              "    if(tbl[i].className == \"tbl_srv_F\"){\n"
-              "      tbl[i].hidden = !sh_F;\n"
-              "    }else if(tbl[i].className == \"tbl_srv_O\"){\n"
-              "      tbl[i].hidden = !sh_O;\n"
-              "    }else{\n"
+              "  let tbl = document.getElementsByName(mcu)[0];\n"
+              "  tbl = tbl.children[1].children;\n"
+              "  if(document.getElementById(\"hideempty\").checked){\n"
+              "    for(let i=0; i<tbl.length; i++){\n"
+              "      let vis = false;\n"
+              "      let lin = tbl[i].children;\n"
+              "      for(let j=2; j<lin.length-3; j++){\n"
+              "        if(lin[j].hidden)continue;\n"
+              "        if(lin[j].textContent == \"\")continue;\n"
+              "        vis = true;\n"
+              "        break;\n"
+              "      }\n"
+              "      tbl[i].hidden = !vis;\n"
+              "    }\n"
+              "  }else{\n"
+              "    for(let i=0; i<tbl.length; i++){\n"
               "      tbl[i].hidden = false;\n"
               "    }\n"
               "  }\n"
-              "  check.checked = sh_O;\n"
-              "  SelectPeriph('Service');\n"
               "}\n\n");
   
   fprintf(pf, "function SelectColor(linenum){\n"
@@ -875,7 +876,6 @@ void html_write_scripts(FILE *pf){
               "}\n\n");
   
   fprintf(pf, "function Periph_Vis_update(){\n"
-              "  SrvVisible();\n"
               "  for(let i=0; i<controls.length; i++){\n"
               "    SelectPeriph(controls[i].name);\n"
               "  }\n"
@@ -1070,19 +1070,14 @@ void html_write_ui(FILE *pf){
     fprintf(pf, "<label for=\"Per.%s\">%s</label><input type=\"checkbox\" class=\"controls\" id=\"Per.%s\" name=\"%s\" checked onclick=\"SelectPeriph('%s');\"/>\n", periph[i].name, periph[i].name, periph[i].name, periph[i].name, periph[i].name);
   }
   fprintf(pf, "<label for=\"Per.%s\">%s</label><input type=\"checkbox\" class=\"controls\" id=\"Per.%s\" name=\"%s\" checked onclick=\"SelectPeriph('%s');\"/>\n", "Other", "Other", "Other", "Other", "Other");
-  fprintf(pf, "<input type=\"checkbox\" class=\"controls\" id=\"Per.Service\" name=\"Service\" checked onclick=\"SelectPeriph('Service');\" hidden/>\n");
+  fprintf(pf, "<label for=\"Per.Service\">Service</label><input type=\"checkbox\" class=\"controls\" id=\"Per.Service\" name=\"Service\" checked onclick=\"SelectPeriph('Service');\"/>\n");
   fprintf(pf, "\n<br>\n");
-  
-  fprintf(pf, "<select id=\"srvsel\" onchange=\"SrvVisible()\">\n"
-              "  <option value=\"srv_show\">Service lines: Show</option>\n"
-              "  <option value=\"srv_opt\">Service lines: Remap only</option>\n"
-              "  <option value=\"srv_hide\">Service lines: Hide</option>\n"
-              "</select>\n");
   
   fprintf(pf, "<input type=\"button\" value=\"Save\" onclick=\"SaveToFile()\"/>\n"
               "<input type=\"file\" id=\"LoadFile\" accept=\".pincfg\" onchange=\"LoadFromFile();\"/>\n"
               "\n");
   
+  fprintf(pf, "<label for=\"hideempty\">Hide empty</label><input type=\"checkbox\" id=\"hideempty\" name=\"hideempty\" onclick=\"UnusedVisible();\"/>\n");
   fprintf(pf, "<label for=\"pinnames\">Pin names</label><input type=\"checkbox\" id=\"pinnames\" name=\"pinnames\" onclick=\"package_draw();\"/>\n");
   
   fprintf(pf, "<input type=\"button\" value=\"HideAll\" onclick=\"HideAll();\"/>\n");

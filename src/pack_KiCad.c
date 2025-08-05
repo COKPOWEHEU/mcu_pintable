@@ -329,9 +329,15 @@ pack_t* pack_load(char *filename){
         pintr->pinshape[pin] = pin_unknown;
       }
       find_chank(pf, "at");
-      fscanf(pf, "%f%f", &(p->pin[pin].x), &(p->pin[pin].y));
+      float alp = 0;
+      if(fscanf(pf, "%f%f%f", &(p->pin[pin].x), &(p->pin[pin].y), &alp) == 2)alp = 0;
       find_chank(pf, NULL); find_chank(pf, "size");
       fscanf(pf, "%f%f", &(p->pin[pin].w), &(p->pin[pin].h));
+      if( fabs(alp-90) < 10){
+        alp = p->pin[pin].w;
+        p->pin[pin].w = p->pin[pin].h;
+        p->pin[pin].h = alp;
+      }
       //p->pin[pin].w *= 1.5; p->pin[pin].h *= 1.5;
       find_chank(pf, NULL);
       pin++;
