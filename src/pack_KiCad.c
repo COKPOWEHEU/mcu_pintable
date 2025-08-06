@@ -130,6 +130,7 @@ void pack_graph_size(pack_t *p, float *x, float *y, float *w, float *h){
         setminmax(ymin, ymax, pintr->graph[i].circ.y1);
         setminmax(ymin, ymax, pintr->graph[i].circ.y2);
         break;
+      case pg_unknown: break;
     }
   }
   for(int i=0; i<p->pinn; i++){
@@ -433,7 +434,7 @@ void pack_test(pack_t *p){
   if(p == NULL)return;
   int pinn = 0;
   for(int i=0; i<p->pinn; i++)if(p->pin[i].name[0] != 0)pinn++;
-  printf("name = [%s]%i (%i)\t%i\n", p->name, p->pinn, pinn, pintr->graphn);
+  printf("name = [%s]%i (%i)\t%li\n", p->name, p->pinn, pinn, (long)(pintr->graphn));
   pack_graph_size(p, &x, &y, &w, &h);
   printf("[%f ; %f]\t(%f x %f)\n", x, y, w, h);
   for(int i=0; i<p->pinn; i++){
@@ -445,6 +446,7 @@ void pack_test(pack_t *p){
       case pg_arc: printf("%i: arc(%f,%f %f,%f, %f,%f)\n", i, pintr->graph[i].arc.x1, pintr->graph[i].arc.y1, pintr->graph[i].arc.x2, pintr->graph[i].arc.y2, pintr->graph[i].arc.x3, pintr->graph[i].arc.y3); break;
       case pg_rect: printf("%i: rect(%f,%f...%f,%f)\n", i, pintr->graph[i].rect.x1, pintr->graph[i].rect.y1, pintr->graph[i].rect.x2, pintr->graph[i].rect.y2); break;
       case pg_circ: printf("%i: rect(%f,%f...%f,%f)\n", i, pintr->graph[i].circ.x1, pintr->graph[i].circ.y1, pintr->graph[i].circ.x2, pintr->graph[i].circ.y2); break;
+      case pg_unknown: break;
     }
   }
 }
@@ -599,16 +601,13 @@ void pack_html_export(pack_t *p, FILE *pf){
       a1 = atan2f( y1-Y, x1-X );
       a2 = atan2f( y2-Y, x2-X );
       a3 = atan2f( y3-Y, x3-X );
+      (void)a2; //Угол от центра дуги до "промежуточной" точки. Возможно, оно пригодится чтобы задать в какую сторону дуга направлена
       char dir = 0;
       fprintf(pf, "    ['a', %f, %f, %f, %f, %f, %s], //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
-      //fprintf(pf, "  ctx.moveTo(x + %f*scale, x + %f*scale);", X, Y);
-      //fprintf(pf, " ctx.arc(x+%f*scale, y+%f*scale, %f*scale, %f, %f, %s); //%i\n", X, Y, R, a1, a3, dir?"true":"false", i);
     }else if(pintr->graph[i].type == pg_rect){
       fprintf(pf, "    ['r', %f, %f, %f, %f], //%i\n", pintr->graph[i].rect.x1, pintr->graph[i].line.y1, pintr->graph[i].line.x2 - pintr->graph[i].rect.x1, pintr->graph[i].rect.y2 - pintr->graph[i].rect.y1, i);
-      //fprintf(pf, "  ctx.fillRect(x + %f*scale, x + %f*scale, %f*scale, %f*scale); //%i", pintr->graph[i].rect.x1, pintr->graph[i].line.y1, pintr->graph[i].line.x2 - pintr->graph[i].rect.x1, pintr->graph[i].rect.y2 - pintr->graph[i].rect.y1, i);
     }else if(pintr->graph[i].type == pg_circ){
       fprintf(pf, "    ['c', %f, %f, %f, %f], //%i\n", (pintr->graph[i].circ.x1+pintr->graph[i].circ.x2)/2, (pintr->graph[i].circ.y1+pintr->graph[i].circ.y2)/2, (pintr->graph[i].circ.x2-pintr->graph[i].circ.x1)/2, (pintr->graph[i].circ.y2-pintr->graph[i].circ.y1)/2, i);
-      //fprintf(pf, "  ctx.ellipse(x + %f*scale, x + %f*scale, %f*scale, %f*scale, 0,0,Math.PI*2); ctx.fill(); //%i", (pintr->graph[i].circ.x1+pintr->graph[i].circ.x2)/2, (pintr->graph[i].circ.y1+pintr->graph[i].circ.y2)/2, (pintr->graph[i].circ.x2-pintr->graph[i].circ.x1)/2, (pintr->graph[i].circ.y2-pintr->graph[i].circ.y1)/2, i);
     }
   }
   fprintf(pf, "  ];\n");
