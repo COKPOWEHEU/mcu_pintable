@@ -5,12 +5,20 @@
 #include <ctype.h>
 #include "pack_KiCad.h"
 
+char fatalflag = 0;
+
 char **pack_path = NULL;
 size_t pack_path_num = 0;
 
 void pack_path_append(char *str){
-#warning TODO
+  char **prev = pack_path;
   pack_path = realloc(pack_path, sizeof(char*)*(pack_path_num + 1));
+  if(pack_path == NULL){
+    pack_path = prev;
+    fatalflag = 1;
+    fprintf(stderr, "Error: Not enough memory\n");
+    return;
+  }
   pack_path[pack_path_num] = strdup(str);
   pack_path_num++;
 }
@@ -23,7 +31,6 @@ void pack_path_free(){
 
 int linenum = 0;
 int packs_maxpins = 0;
-char fatalflag = 0;
 
 void help(char *name){
   printf("Usage:\n\t%s inputfile.pintable [outputfile.html]\n", name);
@@ -121,8 +128,14 @@ void packages_parse(char *buf){
     if(res < 1){fprintf(stderr, "Wrong format at %i\n", linenum); fatalflag=1; return;}
     
     if(pack_list_num+1 >= pack_list_alloc){
-#warning TODO
+      pack_list_t *prev = pack_list;
       pack_list = realloc(pack_list, sizeof(pack_list_t)*(pack_list_alloc + pack_list_dn));
+      if(pack_list == NULL){
+        pack_list = prev;
+        fatalflag = 1;
+        fprintf(stderr, "Error: not enough memory\n");
+        return;
+      }
       pack_list_alloc += pack_list_dn;
     }
     pack_list[pack_list_num].name = strdup(altname);
@@ -343,14 +356,12 @@ void periph_free(){
 }
 
 void test_deps(){
-  if(pack == NULL){fprintf(stderr, "'Packages' section not found\n"); fatalflag = 1; return;}
-  if(mcu == NULL){fprintf(stderr, "'MCU' section not found\n");fatalflag = 1; return;}
-  if(periph == NULL){fprintf(stderr, "'Periph' section not found\n");fatalflag = 1; return;}
+  if(pack == NULL){fprintf(stderr, "Warning: 'Packages' section not found in input file or 'packages' path incorrect. Visualization disabled.\n");}
+  if(mcu == NULL){fprintf(stderr, "Error: 'MCU' section not found\n");fatalflag = 1; return;}
+  if(periph == NULL){fprintf(stderr, "Warning: 'Periph' section not found. All peripherial will be in 'Other' column\n");}
   for(int i=0; i<mcun; i++){
     if(mcu[i].pack == NULL){
-      fprintf(stderr, "MCU [%s]: package [%s] not found\n", mcu[i].name, mcu[i].packname);
-      //fatalflag = 1;
-      //return;
+      fprintf(stderr, "Warning: MCU [%s]: package [%s] not found. Visualization disabled\n", mcu[i].name, mcu[i].packname);
     }
   }
 }
@@ -381,7 +392,7 @@ char mcu_match(char *str, int mcuidx){
     char *en = strchr(str, '[');
     size_t len;
     if(en != NULL)len = en - str; else len = strlen(str)+1;
-    if(strncmp(m->name, str, len)!=0){printf(""); return 0;}
+    if(strncmp(m->name, str, len)!=0){return 0;}
     
     str += len;
   }
@@ -392,7 +403,7 @@ char mcu_match(char *str, int mcuidx){
     char *en = strchr(str, ']');
     if(en == NULL){fprintf(stderr, "%i: Wrong MCU format [%s]\n", linenum, prevstr); return 0;}
     size_t len = en - str;
-    if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(m->packname, str, len)!=0)){printf(""); return 0;}
+    if((strncmp(m->pack->name, str, len)!=0)&&(strncmp(m->packname, str, len)!=0)){return 0;}
   }
   //printf("<<<< OK\n");
   return 1;
@@ -556,7 +567,12 @@ void comment_parse(char *buf){
   if(comment_n + 1 >= comment_alloc){
     comment_t *prev = comment;
     comment = realloc(comment, sizeof(comment_t)*(comment_alloc + comment_allocdn));
-#warning TODO
+    if(comment == NULL){
+      comment = prev;
+      fatalflag = 1;
+      fprintf(stderr, "Error: not enough memory\n");
+      return;
+    }
     comment_alloc += comment_allocdn;
     for(int i=comment_n; i<comment_alloc; i++){
       comment[i].num[0] = 0;
@@ -1481,7 +1497,7 @@ int main(int argc, char **argv){
   mcu_resolv_deps();
   test_deps();
   
-  if(fatalflag){fclose(pf); fprintf(stderr, "Fatal error\n"); goto destroy_all;}
+  if(fatalflag){fclose(pf); /*fprintf(stderr, "Fatal error\n");*/ goto destroy_all;}
   
   rewind(pf);
   linenum = 0;
